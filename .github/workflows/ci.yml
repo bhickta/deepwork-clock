@@ -51,6 +51,10 @@ jobs:
         run: node scripts/verify-versions.mjs --strict
       - name: Verify the native icon set
         run: node scripts/verify-icons.mjs
+      # The release tooling tests only use the Node standard library, so they
+      # run without installing the npm dependencies.
+      - name: Release tooling tests
+        run: npm run test:scripts
 
   frontend:
     name: Frontend (lint, typecheck, unit, build)
