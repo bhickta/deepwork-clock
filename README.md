@@ -20,26 +20,45 @@ correct even when the window is hidden or the WebView is throttled.
 - **Start, pause, resume, reset, skip, end.** Reset and end ask for
   confirmation while a phase is active; the next phase waits for an explicit
   start.
-- **Main and compact views.** The compact view reuses the same window and the
-  same timer, so switching never pauses or resets a session.
+- **Main, compact and floating views.** The compact view reuses the same window
+  and the same timer, so switching never pauses or resets a session. *Floating*
+  is one header action (also <kbd>Primary</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>)
+  that makes the window compact and asks to keep it above other windows; it is
+  unavailable where pinning is unavailable, for example on Wayland.
+- **A window that comes back where you left it.** Position and size are stored
+  in `window-placement.json` in the app data directory and clamped to the
+  current monitor work area on startup. *Reset window position* restores the
+  normal size and asks the desktop to centre the window on the primary monitor;
+  a compositor that owns placement may ignore the position request.
 - **Settings that survive a restart.** Theme (system, light, dark, high
   contrast), text scale (100–200%), durations, session label, notifications,
-  global shortcut, launch at login and history retention. Completion sound is
-  shown as unavailable in this alpha.
+  the optional completion sound (off by default, 0–100 volume, explicit
+  preview), opt-in auto-advance, global shortcut, launch at login, history
+  retention and the last normal/compact layout.
+- **Remappable local shortcuts.** Record a new chord in *Settings →
+  Shortcuts*, or reset one or all of them. An invalid, duplicate or reserved
+  chord never replaces a binding that already works, and the help dialog shows
+  the keys in effect.
 - **Crash recovery.** A running session is checkpointed; after a restart the app
   offers *Resume* or *Discard* and never silently continues.
 - **Local session history.** Completed, skipped and ended phases are stored
   locally with their durations, and can be exported as CSV or JSON.
+- **Redacted diagnostics.** The About view can show and copy a JSON summary of
+  the version, platform, feature flags, timer state, capability states, warning
+  codes and history count. It contains no labels, session identifiers, file
+  paths or settings text.
 - **Keyboard first.** Every action has a shortcut and every control is a real
   button or form field.
 - **Offline.** No account, no analytics, no remote assets, no update check.
 
 ## What it does not do yet
 
-Global shortcuts, tray control, notifications, sound and launch at login are
-implemented in the backend and are exposed through the settings, but their
-behaviour differs per desktop environment and has **not** been verified on
-every platform. Automatic updates are deliberately not implemented.
+Global shortcuts, tray control, notifications and launch at login are
+implemented and exposed through the settings, but their behaviour differs per
+desktop environment and has **not** been verified on every platform. The
+completion chime is local and off by default; it has not been played on a
+physical audio device in the verification environment. Automatic updates are
+deliberately not implemented.
 
 ---
 
@@ -53,14 +72,17 @@ every platform. Automatic updates are deliberately not implemented.
 | Reset the current phase | <kbd>Primary</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd> |
 | Skip to the next phase | <kbd>Primary</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd> |
 | Compact or expanded view | <kbd>Primary</kbd>+<kbd>Shift</kbd>+<kbd>M</kbd> |
+| Floating compact view | <kbd>Primary</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> |
 | Pin the window above others | <kbd>Primary</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> |
 | Open settings | <kbd>Primary</kbd>+<kbd>,</kbd> |
 | Show the keyboard shortcuts | <kbd>F1</kbd> |
 | Announce the remaining time | <kbd>Primary</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd> |
 
-Shortcuts do not fire while a text field has focus, during IME composition, or
-while a key is held down. <kbd>Space</kbd> keeps its native meaning on a
-focused button.
+These are the default local shortcuts. They can be remapped in *Settings →
+Shortcuts*; the help dialog (<kbd>F1</kbd>) lists the bindings that are actually
+in effect. Shortcuts do not fire while a text field has focus, during IME
+composition, or while a key is held down. <kbd>Space</kbd> keeps its native
+meaning on a focused button.
 
 ---
 
@@ -77,6 +99,27 @@ focused button.
 The Linux packages declare their dependencies; the `.deb` is built against an
 Ubuntu 24.04 baseline. The AppImage bundles most of them, but an AppImage is
 not proof of compatibility with every distribution.
+
+### Linux desktops: i3, Regolith and Wayland
+
+Tiling window managers, including i3 and Regolith, ignore the requested window
+size unless the window is allowed to float. To make the requested compact size
+effective, add this rule to your i3 configuration and reload it
+(`i3-msg reload`):
+
+```
+for_window [class="deepwork-clock"] floating enable
+```
+
+Regolith's i3 session uses i3 underneath, so the same rule applies there. The
+project does not itself apply or test desktop rules; without one, the window
+manager decides the size. Whether a floating window stays above other
+applications is still up to the window manager.
+
+On Wayland the compositor owns window placement and keep-above. The app reports
+floating and pinning as unavailable there, and a saved position is a hint at
+most. Desktop-specific placement and compositor rules remain the user's
+responsibility.
 
 ### To build from source
 
@@ -153,6 +196,9 @@ Deepwork Clock works entirely offline.
 - No network requests at runtime; the frontend loads no remote assets or fonts.
 - Session labels and history stay on your machine and are only exported when you
   ask for it.
+- The About diagnostics are generated locally and redacted before they are
+  shown. They contain no session labels, identifiers, absolute user paths or
+  settings text, and nothing is sent anywhere.
 - The optional global shortcut is registered with the operating system, not
   with a remote service. The app never captures the keyboard outside its own
   window.
@@ -178,7 +224,8 @@ docs/                    plan, task cards, handoff and evidence
 The interface targets WCAG 2.2 AA and WCAG2ICT for the desktop behaviour: a
 single `role="timer"` element with `aria-live="off"`, one polite live region
 for state changes, real buttons and labelled fields, visible focus, a 44 px
-minimum target size and a text scale up to 200%.
+minimum target size and a text scale up to 200%. Every action has a keyboard
+path, and local shortcuts can be remapped in the settings.
 
 Automated axe runs in CI are a supplement only. The screen-reader matrix
 (NVDA, Narrator, VoiceOver, Orca) is still open work and is listed as a known
@@ -186,11 +233,11 @@ limitation.
 
 ## Licence
 
-[MIT](LICENSE). The application icon and the tray glyphs are original artwork
-created for this project and are covered by the same licence; no third-party
-icon, font or sound asset is bundled. The licences of the bundled
-dependencies are listed in the `THIRD_PARTY_NOTICES.md` file that is attached
-to every release.
+[MIT](LICENSE). The application icon, the tray glyphs and the completion chime
+are original assets created for this project and are covered by the same
+licence; no third-party icon, font or sound asset is bundled. The licences of
+the bundled dependencies are listed in the `THIRD_PARTY_NOTICES.md` file that
+is attached to every release.
 
 ## Known limitations
 
@@ -202,15 +249,34 @@ to every release.
   project plan requires before a 1.0 release.
 - **Advertised is not verified.** The plan targets Windows 11 x64, macOS arm64
   and x64 and Linux x64. The toolkit supports more platforms than that; this
-  project only claims the targets above, and only the builds produced by the
-  release pipeline have been exercised at all.
-- **Completion sound is not implemented in this alpha.** The setting is
-  disabled and the backend refuses to enable it.
+  project only claims the targets above. Local Linux X11 builds and an installed
+  `.deb` have been exercised; no Windows or macOS runtime has been run, and no
+  release artifact is published yet.
+- **Completion sound playback is unverified.** The bundled 0.7 s chime is off
+  by default, never loops and is swallowed if the audio device or autoplay
+  policy refuses. It was not played on a physical audio device during
+  verification, so treat it as best effort; the visual completion is the
+  authoritative signal.
+- **Floating and compact sizes depend on the window manager.** On Wayland the
+  app reports floating and pinning as unavailable instead of pretending they
+  work. On X11 tiling window managers the requested size is ignored unless you
+  add the i3/Regolith floating rule above; whether the window stays above other
+  applications is still up to the window manager. A virtual display without a
+  window manager cannot confirm that an always-on-top request was honoured.
+- **Window placement is best effort.** Saved position and size are clamped to a
+  visible work area and fall back to the primary monitor when the remembered
+  monitor is gone. Wayland compositors own placement, so the saved coordinates
+  are only a hint there.
+- **Auto-advance is opt-in and only for awake time.** The next phase starts by
+  itself only after a completion observed within a 3-second sampling gap in
+  cycle mode. After a suspend or an uncertain gap the completed phase waits for
+  an explicit action; after a restart, the checkpoint is offered as recovery and
+  never resumes by itself.
 - **Global shortcuts, tray, notifications and launch at login** behave
   differently per desktop and are not yet verified on every platform. The
-  settings report what the current desktop supports.
-- **Wayland** has no general keep-above and global hotkey support. The app
-  reports the capability as unavailable instead of pretending it works.
+  settings report what the current desktop supports. On Wayland there is no
+  general global-hotkey path in this build; the capability is reported as
+  unavailable rather than silently failing.
 - **Resource budgets** in the plan (memory, CPU, startup time) are targets;
   no measured numbers are published for this alpha.
 - **No automatic updates.** Updating means downloading a new package.

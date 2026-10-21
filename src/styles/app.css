@@ -52,6 +52,9 @@
   align-items: center;
   gap: var(--space-1);
   flex: none;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 100%;
 }
 
 .menu-anchor {
@@ -89,7 +92,7 @@
   color: var(--text);
   font-size: 0.875rem;
   font-weight: 550;
-  text-align: left;
+  text-align: start;
   cursor: pointer;
   min-width: 0;
   overflow-wrap: anywhere;
@@ -247,7 +250,7 @@
 .header-warning__count {
   position: absolute;
   top: 2px;
-  right: 2px;
+  inset-inline-end: 2px;
   min-width: 1rem;
   padding: 0 2px;
   border-radius: var(--radius-pill);
@@ -414,7 +417,7 @@
   border: 1px solid var(--warning);
   border-radius: var(--radius-md);
   padding: var(--space-4);
-  text-align: left;
+  text-align: start;
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
@@ -717,7 +720,7 @@
 
 .modal__close {
   flex: none;
-  margin-left: auto;
+  margin-inline-start: auto;
 }
 
 .modal__description {
@@ -767,7 +770,7 @@
 
 .help__table th,
 .help__table td {
-  text-align: left;
+  text-align: start;
   padding: var(--space-2) var(--space-1);
   border-bottom: 1px solid var(--border);
   font-weight: 500;
@@ -781,7 +784,46 @@
 }
 
 .help__keys {
-  text-align: right;
+  text-align: end;
+}
+
+/* About and diagnostics --------------------------------------------------- */
+
+.about__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+.about__section-title {
+  font-size: 0.9375rem;
+  font-weight: 650;
+}
+
+.about__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.diagnostics-pre {
+  margin: 0;
+  max-height: 14rem;
+  overflow: auto;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--canvas-subtle);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  text-align: start;
 }
 
 /* Shortcut remapping ----------------------------------------------------- */
@@ -1014,8 +1056,14 @@
   gap: var(--space-3);
 }
 
+.range-row .button {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+}
+
 .range {
-  flex: 1 1 6rem;
+  flex: 1 1 4rem;
   min-width: 0;
   min-height: var(--control-size);
   accent-color: var(--accent);
@@ -1024,7 +1072,7 @@
 .range-output {
   flex: none;
   min-width: 0;
-  text-align: right;
+  text-align: end;
   font-variant-numeric: tabular-nums;
   font-weight: 600;
 }
@@ -1088,7 +1136,7 @@
 
 [data-view="compact"] .app-header__actions {
   gap: 2px;
-  margin-left: auto;
+  margin-inline-start: auto;
 }
 
 [data-view="compact"] .app-main {
@@ -1150,7 +1198,6 @@
   .app-header,
   .app-main,
   .app-footer {
-    padding-left: var(--space-3);
-    padding-right: var(--space-3);
+    padding-inline: var(--space-3);
   }
 }

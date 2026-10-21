@@ -12,10 +12,12 @@
  * without a working binding.
  */
 import { MAX_LOCAL_SHORTCUT_LENGTH } from "./contract";
+import { t, type StringKey } from "./i18n";
 
 export interface ShortcutSpec {
   readonly id: string;
-  readonly label: string;
+  /** The stable catalog key of the user facing label. */
+  readonly labelKey: StringKey;
   /** Lower case key, or `space` / `f1` style names. */
   readonly key: string;
   /** Requires the primary modifier (Command on macOS, Ctrl elsewhere). */
@@ -25,16 +27,21 @@ export interface ShortcutSpec {
 }
 
 export const SHORTCUTS: readonly ShortcutSpec[] = [
-  { id: "toggle-timer", label: "Start, pause or resume", key: "space" },
-  { id: "reset", label: "Reset the current phase", key: "r", primary: true, shift: true },
-  { id: "next", label: "Skip to the next phase", key: "n", primary: true, shift: true },
-  { id: "compact", label: "Compact or expanded view", key: "m", primary: true, shift: true },
-  { id: "float", label: "Floating compact view", key: "f", primary: true, shift: true },
-  { id: "pin", label: "Pin the window above others", key: "p", primary: true, shift: true },
-  { id: "settings", label: "Open settings", key: ",", primary: true },
-  { id: "help", label: "Show the keyboard shortcuts", key: "f1" },
-  { id: "announce", label: "Announce the remaining time", key: "t", primary: true, shift: true }
+  { id: "toggle-timer", labelKey: "shortcut.toggle_timer", key: "space" },
+  { id: "reset", labelKey: "shortcut.reset", key: "r", primary: true, shift: true },
+  { id: "next", labelKey: "shortcut.next", key: "n", primary: true, shift: true },
+  { id: "compact", labelKey: "shortcut.compact", key: "m", primary: true, shift: true },
+  { id: "float", labelKey: "shortcut.float", key: "f", primary: true, shift: true },
+  { id: "pin", labelKey: "shortcut.pin", key: "p", primary: true, shift: true },
+  { id: "settings", labelKey: "shortcut.settings", key: ",", primary: true },
+  { id: "help", labelKey: "shortcut.help", key: "f1" },
+  { id: "announce", labelKey: "shortcut.announce", key: "t", primary: true, shift: true }
 ];
+
+/** The translated label of one shortcut. */
+export function shortcutLabel(spec: ShortcutSpec): string {
+  return t(spec.labelKey);
+}
 
 export type ShortcutHandlerId =
   | "toggle-timer"

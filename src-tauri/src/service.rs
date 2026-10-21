@@ -348,11 +348,6 @@ impl AppService {
         settings: Settings,
         expected_revision: u64,
     ) -> Result<Settings, BridgeError> {
-        if settings.sound {
-            return Err(BridgeError::unsupported(
-                "Completion sound is not available in this build.",
-            ));
-        }
         if settings.global_shortcut_enabled {
             // A binding that would swallow ordinary typing is refused before
             // it is stored, not only when it is registered.
@@ -528,8 +523,8 @@ impl AppService {
         capabilities.insert(
             "sound".to_string(),
             Capability::new(
-                CapabilityState::Unavailable,
-                "Completion sound is not implemented in this build.",
+                CapabilityState::Available,
+                "A short completion sound plays in the application when a phase completes. It is off until you enable it.",
             ),
         );
 

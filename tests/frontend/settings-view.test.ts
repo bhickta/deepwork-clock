@@ -11,6 +11,7 @@ interface Harness {
   saved: Settings[];
   saveError: string | null;
   previewed: Array<{ theme: Theme; textScale: number }>;
+  previewedSounds: number[];
 }
 
 function build(capabilities: SettingsViewCapabilities = {}): Harness {
@@ -18,7 +19,8 @@ function build(capabilities: SettingsViewCapabilities = {}): Harness {
     view: null as unknown as SettingsView,
     saved: [],
     saveError: null,
-    previewed: []
+    previewed: [],
+    previewedSounds: []
   };
   harness.view = new SettingsView(document, {
     capabilities,
@@ -32,6 +34,9 @@ function build(capabilities: SettingsViewCapabilities = {}): Harness {
     onCancel: () => undefined,
     onPreview: (theme, textScale) => {
       harness.previewed.push({ theme, textScale });
+    },
+    onPreviewSound: (volumePercent) => {
+      harness.previewedSounds.push(volumePercent);
     },
     announce: () => undefined
   });
@@ -302,6 +307,71 @@ describe("local shortcut remapping", () => {
   });
 });
 
+describe("completion sound and auto-advance", () => {
+  async function submit(): Promise<void> {
+    field<HTMLFormElement>(".settings-form").dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true })
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  it("fills the volume and disables it while the sound is off", () => {
+    const harness = build();
+    harness.view.open(makeSettings({ sound: false, soundVolume: 40 }));
+
+    expect(field<HTMLInputElement>("#sound-volume").value).toBe("40");
+    expect(field<HTMLElement>("#sound-volume-output").textContent).toBe("40%");
+    expect(field<HTMLInputElement>("#sound-volume").disabled).toBe(true);
+
+    field<HTMLInputElement>("#sound").click();
+    expect(field<HTMLInputElement>("#sound-volume").disabled).toBe(false);
+  });
+
+  it("previews the sound at the chosen volume even while the toggle is off", () => {
+    const harness = build();
+    harness.view.open(makeSettings({ sound: false, soundVolume: 60 }));
+
+    const volume = field<HTMLInputElement>("#sound-volume");
+    volume.value = "25";
+    volume.dispatchEvent(new Event("input", { bubbles: true }));
+
+    const preview = field<HTMLButtonElement>('[data-action="preview-sound"]');
+    expect(preview.disabled).toBe(false);
+    preview.click();
+
+    expect(harness.previewedSounds).toEqual([25]);
+    expect(field<HTMLElement>("#sound-volume-output").textContent).toBe("25%");
+  });
+
+  it("saves the volume and the auto-advance choice", async () => {
+    const harness = build();
+    harness.view.open(makeSettings());
+
+    field<HTMLInputElement>("#sound").click();
+    const volume = field<HTMLInputElement>("#sound-volume");
+    volume.value = "35";
+    volume.dispatchEvent(new Event("input", { bubbles: true }));
+    field<HTMLInputElement>("#auto-advance").click();
+
+    await submit();
+
+    expect(harness.saved).toHaveLength(1);
+    expect(harness.saved[0]?.sound).toBe(true);
+    expect(harness.saved[0]?.soundVolume).toBe(35);
+    expect(harness.saved[0]?.autoAdvance).toBe(true);
+  });
+
+  it("disables the volume and the preview when the desktop cannot play sound", () => {
+    const harness = build({
+      sound: { state: "unavailable", reason: "There is no audio device." }
+    });
+    harness.view.open(makeSettings({ sound: true }));
+
+    expect(field<HTMLInputElement>("#sound-volume").disabled).toBe(true);
+    expect(field<HTMLButtonElement>('[data-action="preview-sound"]').disabled).toBe(true);
+  });
+});
+
 describe("isShortcutPattern", () => {
   it("accepts a modifier combination and rejects a bare key", () => {
     expect(isShortcutPattern("CommandOrControl+Alt+Shift+Space")).toBe(true);
@@ -320,6 +390,7 @@ describe("announce helper", () => {
       onSave: async () => null,
       onCancel: () => undefined,
       onPreview: () => undefined,
+      onPreviewSound: () => undefined,
       announce
     });
     expect(view.isOpen).toBe(false);

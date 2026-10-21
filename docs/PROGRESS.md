@@ -38,20 +38,48 @@ Record task ID, implementation status, executed checks and missing checks separa
 | T10–T12 | Implemented, Linux exercised | Suspend-inclusive adapters, serial service, real invoke/event boundary; Windows/macOS runtime checks pending |
 | T13–T20 | Implemented | Themes, timer, settings, dialogs/shortcuts, compact/pin requests, durable settings/recovery and native icons |
 | T21 | Local checks run | Unit, browser/axe and native WebDriver tests; final gate results recorded separately |
-| T22, T23 | In progress | CI/release workflow source complete; first hosted run and downloadable assets pending |
+| T22 | In progress | CI/release workflow source complete; first hosted run pending |
+| T23 | Not released | Version remains `0.1.0-alpha.1`; no tag, package publication or install authorization yet |
 | T24–T26 | Implemented, partial native verification | Capability reporting, tray/single-instance/close handling; physical desktop scripts pending |
-| T27 | Pending | Full monitor/DPI persistence and hot-plug recovery; basic Restore window exists |
-| T28 | Partial | Shortcut help and global chord input exist; full configurable local-shortcut remapping pending |
+| T27 | Implemented, Linux/X11 headless verified | Logical bounds in `window-placement.json` (app data), clamped to a monitor work area; losing the remembered monitor falls back to the primary monitor (unit tested). *Reset window position* restores 420×440 and asks to centre where a position request is honoured. Xvfb: a restart restored the saved 320×200 bounds. Reset itself and monitor hot-plug were not separately exercised in that run. i3/Regolith still tile unless a floating rule is added; Wayland placement is a hint only |
+| T28 | Implemented, automated tests only | Record/validate/reset local chords in Settings; stored as `localShortcuts`; invalid, duplicate or reserved chords never replace a working default; the help dialog shows the effective bindings. Recording on physical keyboard layouts, AltGr and IME is not manually verified |
 | T29 | Implemented, not fully OS tested | Opt-in native global shortcuts, repeat/conflict handling |
-| T30 | Pending | Wayland portal shortcut adapter; current UI explicitly reports unavailable |
+| T30 | Not implemented; explicit unsupported | On Wayland the capability reports unavailable; there is no GlobalShortcuts portal adapter and no GNOME/KDE portal test. The card is satisfied only as an explicit unsupported status |
 | T31 | Implemented, delivery not manually verified | Optional native notification after durable completion |
-| T32 | Pending | Completion sound intentionally unavailable; setting cannot silently enable it |
-| T33 | Partial | Suspend-inclusive countdown and conservative interruption marking; full power-event coverage and opt-in auto-advance pending |
+| T32 | Implemented, audio playback unverified | Original 0.7 s mono WAV (`src/assets/completion.wav`), off by default, 0–100 volume, explicit preview, no loop; playback failures are swallowed. Tests stub the audio element; no physical audio device was exercised |
+| T33 | Implemented, native sleep/resume unverified | Opt-in `autoAdvance` advances once only after a completion observed within a 3 s sampling gap in cycle mode. A long gap or suspend leaves the phase completed and waits for an explicit action; a restart offers the checkpoint as recovery and never resumes by itself. Gap logic is unit tested; OS sleep/resume was not manually exercised |
 | T34, T35 | Implemented | Bounded history, interruption confirmation, totals and safe CSV/JSON export; native save-dialog interaction still manual |
 | T36 | Implemented, OS verification pending | Opt-in launch at login |
-| T37 | Partial | English catalog and layout readiness; pseudo-localization/RTL audit and translations pending |
-| T38 | Partial | About/version, dependency notices and warnings; diagnostics export pending |
-| T39 | Pending | Beta completeness/validation and beta release |
-| T40–T47 | Pending | Production accessibility, performance/soak, security/license review, installer verification, signing and stable-release decision |
+| T37 | Implemented (English only) | Complete English catalog with stable keys, pseudo-localization and RTL direction helpers, and logical CSS properties. No translations, no locale switcher and no native RTL layout or screen-reader audit |
+| T38 | Implemented, clipboard unverified on desktop | About shows the redacted `get_diagnostics` JSON with copy-to-clipboard and a selection fallback. It contains version, OS/architecture, feature flags, timer state, capabilities, warning codes and history count — no labels, session IDs, absolute paths or settings text; the version has no build hash. A Rust test asserts paths, session/phase IDs and a label do not leak. Clipboard interaction was not manually verified; notices are generated at release time |
+| T39 | Pending | Beta completeness/validation and beta release not started; this wave is not a released beta |
+| T40–T42 | Pending | Manual screen-reader matrix, visual/alternate-input audit and 8-hour soak/process-tree measurements not executed. See `evidence/production-readiness.md` |
+| T43–T47 | Pending | Dependency/licence review, clean-machine installer matrix, signing (no credentials configured), maintenance walkthrough and stable decision not verified. `1.0.0` must not be tagged |
+
+## Implementation wave 2 (2026-10-21)
+
+Window, sound and diagnostics work on top of commit `097483e`, reviewed in the
+working tree. Documentation edits in this step are uncommitted.
+
+- Frontend: `npm run typecheck`, `npm run lint`, `npm test -- --run` and
+  `npm run build` passed. Vitest ran 12 files and 168 tests. The production
+  bundle was 28.09 kB gzip JavaScript and 4.54 kB gzip CSS, plus a 61.78 kB WAV
+  asset.
+- Rust in the isolated Ubuntu 24.04 Docker environment:
+  `cargo test --manifest-path src-tauri/Cargo.toml --all-targets` → 71 passed;
+  `cargo test --manifest-path src-tauri/src/core/Cargo.toml` → 62 passed.
+  Clippy with `--all-targets -- -D warnings` and `cargo fmt --check` were
+  clean.
+- Native Linux/X11 under Xvfb with no window manager: normal window 420×440;
+  compact 320×200 with the compact layout; floating shrank the window and
+  issued the always-on-top request; a restart reopened at 320×200 **and** the
+  compact layout after the `viewMode` bug was fixed; `window-placement.json`
+  was written with clamped logical bounds.
+- Earlier the same day, the installed `.deb` launched from the Regolith ilia
+  launcher after the desktop-entry fix; the process and a viewable window were
+  confirmed, with `WM_CLASS` `deepwork-clock`.
+- Not verified: whether i3 honours always-on-top (Xvfb has no window manager),
+  playback on a physical audio device, tray click behaviour, notifications on a
+  real desktop, screen readers, or any Windows/macOS runtime behaviour.
 
 The first release must remain an unsigned alpha. Do not rename it production-ready or silently mark the pending cards complete. Resume future implementation at the pending card relevant to the next product milestone, retaining the tests and contracts already delivered.

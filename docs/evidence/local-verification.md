@@ -35,3 +35,68 @@ Executed after the review fixes, against the source committed as `b19c997` and i
 - `images/native-light.png` is a direct screenshot of that native Linux application, not a design mockup or the browser demo.
 
 The first full gate exposed an MSRV-dependent Clippy warning and an ambiguous browser-test selector; both were fixed and the full relevant checks rerun. The native driver was pinned to stable 2.1.0 after an incompatible 3.0 alpha opened a blank browser. A separate smoke-harness client/session wiring error was fixed before recording the successful native result. These checks do not substitute for the production-only manual gates.
+
+## Window, sound and diagnostics wave (2026-10-21)
+
+This section covers the floating view, placement persistence, local shortcut
+remapping, completion chime, auto-advance and About diagnostics. It is Linux
+and X11 only. It is not evidence for Windows, macOS or Wayland, and it is not a
+manual screen-reader or audio-device test.
+
+Environment: same Ubuntu 24.04 host as above; frontend checks run on the host;
+Rust checks run in the isolated Ubuntu 24.04 Docker image; native window checks
+run on a virtual X display with no window manager.
+
+| Command | Observed result | Scope |
+|---|---|---|
+| `npm run typecheck` | Passed | Strict TypeScript |
+| `npm run lint` | Passed | ESLint |
+| `npm test -- --run` | 12 files, 168 tests passed | Vitest unit and DOM tests |
+| `npm run build` | Passed; JS 28.09 kB gzip, CSS 4.54 kB gzip, WAV 61.78 kB | Production frontend bundle |
+| `cargo test --manifest-path src-tauri/Cargo.toml --all-targets` | 71 passed | Application, service and platform adapters in Docker |
+| `cargo test --manifest-path src-tauri/src/core/Cargo.toml` | 62 passed | Settings, storage, history, export and service in Docker |
+| `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings` | Clean | Docker; no warnings promoted to errors |
+| `cargo fmt --manifest-path src-tauri/Cargo.toml --check` | Clean | Docker |
+| `cargo build --manifest-path src-tauri/Cargo.toml --features custom-protocol` | Passed | Debug Linux executable with embedded production assets |
+
+### Xvfb method
+
+The native checks used `xvfb-run -a` with **no window manager**. The
+application was launched in that display, then driven through its real commands
+and window actions. Window geometry and layout were observed on the X server
+after each action. A display without a window manager can show that the
+application requested a size or an always-on-top state; it cannot show how a
+real window manager would honour the stacking request.
+
+Observed:
+
+- Normal launch: 420×440 logical pixels.
+- Compact action: the window shrank to 320×200 and rendered the compact layout,
+  not the normal layout in a smaller window.
+- Floating action: the window shrank to 320×200 and the backend issued the
+  always-on-top request. Whether a window manager honours it was not observable.
+- Restart: the window reopened at 320×200 **and** rendered the compact layout.
+  The first run of this check exposed a bug: placement restored the saved size
+  while the stored view mode was not applied. The view mode is now persisted as
+  `viewMode` in settings and applied after placement; the frontend tests cover
+  the restore and save paths.
+- `window-placement.json` was written to the isolated application data
+  directory with finite, clamped logical bounds.
+
+Also on the same day, the installed `.deb` was launched from the Regolith ilia
+launcher (`Super`+`Space`) after the desktop-entry fix. The process and a
+viewable window were confirmed, and `WM_CLASS` was `deepwork-clock`. This is a
+launch check only; it is not a tray, always-on-top, notification, audio or
+window-manager-rule test.
+
+### Not verified in this wave
+
+- Whether i3 or another real window manager honours the always-on-top request
+  (the Xvfb session had no window manager).
+- Playback of `src/assets/completion.wav` on a physical audio device, including
+  muted, missing or denied devices.
+- Tray click behaviour and notification delivery on a real desktop.
+- Recording a remapped shortcut on non-US layouts, AltGr or during IME input.
+- Any screen reader (Orca, NVDA, Narrator, VoiceOver).
+- Any Windows or macOS runtime behaviour.
+- T40–T47 production gates; see `production-readiness.md`.

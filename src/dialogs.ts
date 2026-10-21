@@ -7,6 +7,7 @@
  */
 import { el, focusableWithin, setText, updateScrollableFocus } from "./dom";
 import { createIcon } from "./icons";
+import { t } from "./i18n";
 
 let dialogCounter = 0;
 
@@ -64,7 +65,7 @@ export class Modal {
       "button",
       {
         class: "icon-button modal__close",
-        attrs: { type: "button", "aria-label": "Close dialog" },
+        attrs: { type: "button", "aria-label": t("action.close_dialog") },
         on: { click: () => void this.requestClose() }
       },
       [createIcon("close", 18)]
@@ -258,7 +259,7 @@ export function confirmDialog(doc: Document, options: ConfirmOptions): Promise<b
     const confirmButton = el("button", {
       class: options.tone === "danger" ? "button button--danger" : "button button--primary",
       attrs: { type: "button" },
-      text: options.confirmLabel ?? "Confirm",
+      text: options.confirmLabel ?? t("action.confirm"),
       on: {
         click: () => {
           finish(true);
@@ -270,7 +271,7 @@ export function confirmDialog(doc: Document, options: ConfirmOptions): Promise<b
     const cancelButton = el("button", {
       class: "button",
       attrs: { type: "button" },
-      text: options.cancelLabel ?? "Cancel",
+      text: options.cancelLabel ?? t("action.cancel"),
       on: {
         click: () => {
           finish(false);

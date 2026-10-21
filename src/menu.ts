@@ -107,6 +107,16 @@ export class Menu {
     }
     element.style.position = "fixed";
     element.style.top = `${Math.round(top)}px`;
+    const rtl = this.doc.documentElement.getAttribute("dir") === "rtl";
+    if (rtl && view) {
+      // Anchor the menu to the inline start (the right edge) and let it grow
+      // towards the start, while staying inside the viewport.
+      const maxRight = Math.max(gap, view.innerWidth - width - gap);
+      const right = Math.min(Math.max(gap, view.innerWidth - rect.right), maxRight);
+      element.style.right = `${Math.round(right)}px`;
+      element.style.left = "auto";
+      return;
+    }
     element.style.left = `${Math.round(Math.max(gap, rect.right - width))}px`;
     element.style.right = "auto";
   }

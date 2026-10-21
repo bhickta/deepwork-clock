@@ -259,6 +259,46 @@ test.describe("storage warning", () => {
   });
 });
 
+test.describe("right-to-left readiness", () => {
+  test.use({ viewport: { width: 360, height: 720 } });
+
+  test("lays out a long pseudo label in a right-to-left document", async ({ page }) => {
+    await openPreview(page);
+    await page.click('[data-action="menu"]');
+    await page.click('[data-menu-item="settings"]');
+    await page.fill(
+      "#label",
+      "\u27e6Šéţţíñğš· ƒóŕ· ðééþ· ŵóŕķ· áñð· çáļɱ· éñţŕý· þĥášéš· ŵíţĥ· á· ļóñğ· ļáƀéļ·\u27e7"
+    );
+    await page.locator(".modal__footer .button--primary").click();
+    await expect(page.locator('[role="dialog"]')).toBeHidden();
+
+    await page.evaluate(() => {
+      document.documentElement.setAttribute("dir", "rtl");
+    });
+
+    await expect(page.locator(".session-label")).toContainText("Šéţţíñğš");
+    expect(await hasHorizontalOverflow(page)).toBe(false);
+    const report = await measureOverflow(page);
+    expect(report.root).toBeLessThanOrEqual(2);
+    expect(report.outsideViewport).toEqual([]);
+
+    // The overflow menu is anchored to the inline start, so it stays inside
+    // the right-to-left window instead of growing off the edge.
+    await page.click('[data-action="menu"]');
+    const menu = page.locator('[role="menu"]');
+    await expect(menu).toBeVisible();
+    const box = await menu.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box?.x ?? -1).toBeGreaterThanOrEqual(0);
+    expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(361);
+    await page.keyboard.press("Escape");
+
+    await saveEvidence(page, "12-rtl-long-label-360x720");
+    await expectNoSeriousAxeViolations(page, "right-to-left layout");
+  });
+});
+
 test.describe("large text", () => {
   test.use({ viewport: NORMAL_VIEW });
 

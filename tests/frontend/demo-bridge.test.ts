@@ -124,6 +124,21 @@ describe("development preview bridge", () => {
     expect(await bridge.getRecovery()).toBeNull();
   });
 
+  it("offers a redacted diagnostics document", async () => {
+    const bridge = createDemoBridge();
+    const settings = await bridge.getSettings();
+    expect(settings.soundVolume).toBe(60);
+    expect(settings.autoAdvance).toBe(false);
+
+    const diagnostics = JSON.parse(await bridge.getDiagnostics()) as {
+      features: { sound: boolean; autoAdvance: boolean };
+      timer: { status: string };
+    };
+    expect(diagnostics.features.sound).toBe(false);
+    expect(diagnostics.features.autoAdvance).toBe(false);
+    expect(diagnostics.timer.status).toBe("idle");
+  });
+
   it("reports the checkpoint when the preview simulates an interruption", async () => {
     const bridge = createDemoBridge({ recovery: true });
     const snapshot = await bridge.getSnapshot();

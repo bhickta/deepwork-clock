@@ -164,4 +164,25 @@ describe("floating view", () => {
     expect(bridge.windowActions).toEqual(["restore"]);
     expect(query(root, "#app-notice").textContent).toContain("restored");
   });
+
+  it("restores the saved compact layout without a window request", async () => {
+    const bridge = new FakeBridge({ settings: { viewMode: "compact" } });
+    const root = await mount(bridge);
+
+    expect(root.getAttribute("data-view")).toBe("compact");
+    expect(bridge.windowActions).toEqual([]);
+    expect(query(root, '[data-action="compact"]').getAttribute("title")).toBe("Expanded view");
+  });
+
+  it("saves the compact layout so a restart matches the window size", async () => {
+    const bridge = new FakeBridge();
+    const root = await mount(bridge);
+
+    query(root, '[data-action="compact"]').click();
+    await flush();
+    await flush();
+
+    expect(bridge.windowActions).toEqual(["compact"]);
+    expect(bridge.savedSettings.at(-1)?.settings.viewMode).toBe("compact");
+  });
 });

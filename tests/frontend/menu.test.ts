@@ -45,6 +45,7 @@ function items(): HTMLButtonElement[] {
 
 beforeEach(() => {
   document.body.textContent = "";
+  document.documentElement.removeAttribute("dir");
 });
 
 describe("Menu", () => {
@@ -117,6 +118,28 @@ describe("Menu", () => {
     const harness = build();
     harness.button.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
     expect(harness.menu.isOpen).toBe(true);
+  });
+
+  it("anchors the menu to the start edge in a right-to-left layout", () => {
+    document.documentElement.setAttribute("dir", "rtl");
+    const harness = build();
+    harness.button.getBoundingClientRect = () =>
+      ({
+        left: 300,
+        right: 400,
+        top: 10,
+        bottom: 50,
+        width: 100,
+        height: 40,
+        x: 300,
+        y: 10,
+        toJSON: () => ({})
+      }) as DOMRect;
+    harness.button.click();
+
+    const menu = document.querySelector<HTMLElement>(".menu");
+    expect(menu?.style.left).toBe("auto");
+    expect(menu?.style.right).not.toBe("");
   });
 
   it("does nothing when it is closed and asked to close", () => {

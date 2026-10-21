@@ -35,6 +35,7 @@ const CATALOG = {
   "action.settings": "Settings",
   "action.cancel": "Cancel",
   "action.close": "Close",
+  "action.close_dialog": "Close dialog",
   "action.retry": "Retry",
   "action.confirm": "Confirm",
   "action.discard": "Discard",
@@ -120,6 +121,14 @@ const CATALOG = {
   "settings.text_scale_value": "{value}%",
   "settings.notifications": "Desktop notifications",
   "settings.sound": "Completion sound",
+  "settings.sound.hint":
+    "One short chime when a phase completes. It never repeats or loops, and it stays off until you enable it.",
+  "settings.sound.volume": "Volume",
+  "settings.sound.volume_value": "{value}%",
+  "settings.sound.preview": "Preview sound",
+  "settings.auto_advance": "Start the next phase automatically",
+  "settings.auto_advance.hint":
+    "Only after a normal completion. After a suspend, a restart or an uncertain gap, the next phase waits for you.",
   "settings.global_shortcut": "Global shortcut",
   "settings.global_shortcut.hint":
     "Off by default. Example: CommandOrControl+Alt+Shift+Space. Leave empty to clear it.",
@@ -166,6 +175,7 @@ const CATALOG = {
   "error.delete_failed": "The history could not be deleted: {message}",
   "error.history_deleted": "All session history was deleted.",
   "error.confirm_failed": "That record could not be confirmed: {message}",
+  "error.diagnostics_failed": "The diagnostics could not be read: {message}",
 
   "history.empty": "No sessions have been recorded yet.",
   "history.summary": "{duration} of confirmed focus time across {count} sessions",
@@ -224,6 +234,17 @@ const CATALOG = {
   "about.source": "Source code: {repository}",
   "about.mode.native": "Connected to the desktop timer service.",
   "about.mode.demo": "Browser preview. Nothing is saved.",
+  "about.sound":
+    "The completion chime is an original tone written for this app. No third-party sound recording is included.",
+  "about.diagnostics": "Diagnostics",
+  "about.diagnostics.lead":
+    "A redacted summary that is safe to attach to a bug report. It leaves out your session label, session and phase identifiers, file paths and warning text.",
+  "about.diagnostics.show": "Show diagnostics",
+  "about.diagnostics.copy": "Copy diagnostics",
+  "about.diagnostics.copied": "Diagnostics copied to the clipboard.",
+  "about.diagnostics.copy_manual":
+    "The clipboard is not available. The diagnostics text is selected; copy it with your keyboard.",
+  "about.diagnostics.failed": "The diagnostics could not be read.",
 
   "footer.tagline": "A little space for focused work.",
   "footer.hint": "Press F1 for keyboard shortcuts.",
@@ -250,7 +271,17 @@ const CATALOG = {
     "The timer keeps running. These messages stay until they are dismissed or the problem is gone.",
   "warnings.show": "Show the warnings",
   "warnings.count": "{count} warnings, show the details",
-  "warnings.count_one": "{count} warning, show the details"
+  "warnings.count_one": "{count} warning, show the details",
+
+  "shortcut.toggle_timer": "Start, pause or resume",
+  "shortcut.reset": "Reset the current phase",
+  "shortcut.next": "Skip to the next phase",
+  "shortcut.compact": "Compact or expanded view",
+  "shortcut.float": "Floating compact view",
+  "shortcut.pin": "Pin the window above others",
+  "shortcut.settings": "Open settings",
+  "shortcut.help": "Show the keyboard shortcuts",
+  "shortcut.announce": "Announce the remaining time"
 } as const;
 
 export type StringKey = keyof typeof CATALOG;
@@ -272,4 +303,114 @@ export function t(key: StringKey, vars?: TemplateVars): string {
 /** Exposed for tests and for tooling that needs the raw catalog. */
 export function catalogKeys(): readonly StringKey[] {
   return Object.keys(CATALOG) as StringKey[];
+}
+
+/** A rough accent map for pseudo-localization; ASCII letters only. */
+const PSEUDO_ACCENTS: Readonly<Record<string, string>> = {
+  a: "á",
+  b: "ƀ",
+  c: "ç",
+  d: "ð",
+  e: "é",
+  f: "ƒ",
+  g: "ğ",
+  h: "ĥ",
+  i: "í",
+  j: "ĵ",
+  k: "ķ",
+  l: "ļ",
+  m: "ɱ",
+  n: "ñ",
+  o: "ó",
+  p: "þ",
+  q: "q",
+  r: "ŕ",
+  s: "š",
+  t: "ţ",
+  u: "ú",
+  v: "ṽ",
+  w: "ŵ",
+  x: "ẋ",
+  y: "ý",
+  z: "ž",
+  A: "Á",
+  B: "Ɓ",
+  C: "Ç",
+  D: "Ð",
+  E: "É",
+  F: "Ƒ",
+  G: "Ğ",
+  H: "Ĥ",
+  I: "Í",
+  J: "Ĵ",
+  K: "Ķ",
+  L: "Ļ",
+  M: "Ṁ",
+  N: "Ñ",
+  O: "Ó",
+  P: "Þ",
+  Q: "Q",
+  R: "Ŕ",
+  S: "Š",
+  T: "Ţ",
+  U: "Ú",
+  V: "Ṽ",
+  W: "Ŵ",
+  X: "Ẋ",
+  Y: "Ý",
+  Z: "Ž"
+};
+
+const PLACEHOLDER_PATTERN = /(\{\w+\})/;
+const WORD_PATTERN = /[A-Za-z]+/g;
+
+function accentWord(word: string): string {
+  let result = "";
+  for (const character of word) {
+    result += PSEUDO_ACCENTS[character] ?? character;
+  }
+  return result;
+}
+
+/**
+ * Expand a catalog value into longer, accented pseudo text.
+ *
+ * The transformation is a layout test aid, not a translation: each word is
+ * accented and widened, while `{placeholders}` are copied through untouched.
+ * The brackets make a clipped string obvious. Use it with a narrow container
+ * and the RTL direction below to find controls that only fit English.
+ */
+export function pseudoLocalize(value: string): string {
+  const expanded = value
+    .split(PLACEHOLDER_PATTERN)
+    .map((part) => {
+      if (/^\{\w+\}$/.test(part)) {
+        return part;
+      }
+      return part.replace(WORD_PATTERN, (word) => `${accentWord(word)}\u00b7`);
+    })
+    .join("");
+  return `\u27e6${expanded}\u27e7`;
+}
+
+/** The whole catalog in pseudo text, for a layout fixture. */
+export function pseudoCatalog(): Readonly<Record<StringKey, string>> {
+  const result = {} as Record<StringKey, string>;
+  for (const key of catalogKeys()) {
+    result[key] = pseudoLocalize(CATALOG[key]);
+  }
+  return result;
+}
+
+export type TextDirection = "ltr" | "rtl";
+
+/**
+ * Apply a writing direction to the document without rebuilding the app.
+ *
+ * The catalog is English and `lang` stays `en`; a real translation would set
+ * its own language. Only the layout direction changes, so the same components
+ * can be checked in a right-to-left layout.
+ */
+export function applyDirection(direction: TextDirection, doc: Document = document): void {
+  doc.documentElement.setAttribute("dir", direction);
 }

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security report
+    url: https://github.com/bhickta/deepwork-clock/security/advisories/new
+    about: Report a vulnerability privately. Do not open a public issue for a security problem.
+  - name: Known limitations
+    url: https://github.com/bhickta/deepwork-clock#known-limitations
+    about: Check the alpha limitations, including unsigned packages and unverified desktop integrations, before filing.

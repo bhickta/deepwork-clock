@@ -15,6 +15,7 @@ export type Mode = "countdown" | "cycle";
 export type Phase = "focus" | "short_break" | "long_break";
 export type Status = "idle" | "running" | "paused" | "completed" | "recovery_pending";
 export type Theme = "system" | "light" | "dark" | "high-contrast";
+export type ViewMode = "normal" | "compact";
 export type Outcome = "completed" | "skipped" | "ended";
 export type CapabilityState = "available" | "unavailable" | "permission_required" | "unknown";
 export type ExportFormat = "csv" | "json";
@@ -37,6 +38,7 @@ export const STATUSES: readonly Status[] = [
   "recovery_pending"
 ];
 export const THEMES: readonly Theme[] = ["system", "light", "dark", "high-contrast"];
+export const VIEW_MODES: readonly ViewMode[] = ["normal", "compact"];
 export const OUTCOMES: readonly Outcome[] = ["completed", "skipped", "ended"];
 export const CAPABILITY_STATES: readonly CapabilityState[] = [
   "available",
@@ -101,6 +103,8 @@ export interface Settings {
   closeToTray: boolean;
   historyEnabled: boolean;
   retentionDays: number;
+  /** The window layout that was last in use. */
+  viewMode: ViewMode;
   /** Local shortcut overrides, keyed by shortcut id. Empty means defaults. */
   localShortcuts: Record<string, string>;
 }
@@ -341,6 +345,7 @@ export function parseSettings(raw: unknown): Settings {
     closeToTray: requireBoolean(record, "closeToTray"),
     historyEnabled: requireBoolean(record, "historyEnabled"),
     retentionDays: requireNonNegativeInteger(record, "retentionDays"),
+    viewMode: requireEnum(record, "viewMode", VIEW_MODES),
     localShortcuts: parseLocalShortcuts(record["localShortcuts"])
   };
 }

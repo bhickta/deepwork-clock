@@ -39,6 +39,8 @@ export interface Bridge {
   getSettings(): Promise<Settings>;
   saveSettings(request: SaveSettingsRequest): Promise<Settings>;
   getCapabilities(): Promise<Capabilities>;
+  /** The redacted diagnostics document as pretty JSON. */
+  getDiagnostics(): Promise<string>;
   /** The warnings that are still relevant, for example a storage failure. */
   getWarnings(): Promise<AppError[]>;
   /** The checkpoint of an interrupted session, when there is one. */
@@ -116,6 +118,10 @@ export function createNativeBridge(): Bridge {
 
     async getCapabilities(): Promise<Capabilities> {
       return parseCapabilities(await invoke("get_capabilities"));
+    },
+
+    async getDiagnostics(): Promise<string> {
+      return await invoke<string>("get_diagnostics");
     },
 
     async getWarnings(): Promise<AppError[]> {

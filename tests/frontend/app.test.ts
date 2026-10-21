@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "../../src/app";
 import { FakeBridge, makeSnapshot } from "./helpers/fake-bridge";
@@ -12,11 +12,14 @@ function flush(): Promise<void> {
   });
 }
 
-async function mount(bridge: FakeBridge): Promise<HTMLElement> {
+async function mount(
+  bridge: FakeBridge,
+  playSound?: (volumePercent: number) => void
+): Promise<HTMLElement> {
   document.body.textContent = "";
   const root = document.createElement("div");
   document.body.appendChild(root);
-  app = new App({ root, bridge });
+  app = new App({ root, bridge, playSound });
   await app.start();
   return root;
 }
@@ -505,6 +508,174 @@ describe("warnings", () => {
     const status = dialog?.querySelector('[role="status"]');
     expect(status).not.toBeNull();
     expect(status?.textContent).toContain("The disk is full.");
+  });
+});
+
+describe("completion sound", () => {
+  it("plays once per completed phase at the saved volume", async () => {
+    const played: number[] = [];
+    const bridge = new FakeBridge({ settings: { sound: true, soundVolume: 35 } });
+    await mount(bridge, (volume) => played.push(volume));
+
+    // The initial render never makes a sound.
+    expect(played).toEqual([]);
+
+    bridge.publish(makeSnapshot({ revision: 8, status: "running", phaseId: "phase-1" }));
+    bridge.publish(makeSnapshot({ revision: 9, status: "completed", phaseId: "phase-1" }));
+    bridge.publish(makeSnapshot({ revision: 10, status: "completed", phaseId: "phase-1" }));
+
+    expect(played).toEqual([35]);
+
+    // The next phase completes later and chimes once on its own.
+    bridge.publish(makeSnapshot({ revision: 11, status: "running", phaseId: "phase-2" }));
+    bridge.publish(makeSnapshot({ revision: 12, status: "completed", phaseId: "phase-2" }));
+    expect(played).toEqual([35, 35]);
+  });
+
+  it("plays once when auto-advance hides the completed state", async () => {
+    const played: number[] = [];
+    const bridge = new FakeBridge({ settings: { sound: true, soundVolume: 45 } });
+    await mount(bridge, (volume) => played.push(volume));
+
+    bridge.publish(
+      makeSnapshot({ revision: 8, status: "running", phaseId: "phase-1", completedFocusCount: 0 })
+    );
+    bridge.publish(
+      makeSnapshot({
+        revision: 9,
+        status: "idle",
+        phase: "short_break",
+        phaseId: "phase-2",
+        completedFocusCount: 1
+      })
+    );
+    // A duplicate of the advanced state stays silent.
+    bridge.publish(
+      makeSnapshot({
+        revision: 9,
+        status: "idle",
+        phase: "short_break",
+        phaseId: "phase-2",
+        completedFocusCount: 1
+      })
+    );
+
+    expect(played).toEqual([45]);
+  });
+
+  it("stays silent when the completion sound is off", async () => {
+    const played: number[] = [];
+    const bridge = new FakeBridge({ settings: { sound: false, soundVolume: 60 } });
+    await mount(bridge, (volume) => played.push(volume));
+
+    bridge.publish(makeSnapshot({ revision: 8, status: "running" }));
+    bridge.publish(makeSnapshot({ revision: 9, status: "completed" }));
+
+    expect(played).toEqual([]);
+  });
+
+  it("stays silent at volume zero", async () => {
+    const played: number[] = [];
+    const bridge = new FakeBridge({ settings: { sound: true, soundVolume: 0 } });
+    await mount(bridge, (volume) => played.push(volume));
+
+    bridge.publish(makeSnapshot({ revision: 8, status: "running" }));
+    bridge.publish(makeSnapshot({ revision: 9, status: "completed" }));
+
+    expect(played).toEqual([]);
+  });
+
+  it("stays silent for a phase that was already complete on start", async () => {
+    const played: number[] = [];
+    const bridge = new FakeBridge({
+      snapshot: { status: "completed" },
+      settings: { sound: true, soundVolume: 50 }
+    });
+    await mount(bridge, (volume) => played.push(volume));
+
+    expect(played).toEqual([]);
+  });
+
+  it("keeps the completion when the audio device fails", async () => {
+    const bridge = new FakeBridge({ settings: { sound: true, soundVolume: 60 } });
+    await mount(bridge, () => {
+      throw new Error("there is no audio device");
+    });
+
+    bridge.publish(makeSnapshot({ revision: 8, status: "running" }));
+    expect(() =>
+      bridge.publish(makeSnapshot({ revision: 9, status: "completed" }))
+    ).not.toThrow();
+    expect(app?.currentSnapshot?.status).toBe("completed");
+  });
+});
+
+describe("about diagnostics", () => {
+  afterEach(() => {
+    Reflect.deleteProperty(navigator, "clipboard");
+  });
+
+  it("fetches on open and shows the document only when asked", async () => {
+    const bridge = new FakeBridge();
+    bridge.diagnostics = '{\n  "appVersion": "0.1.0-alpha.1"\n}';
+    const root = await mount(bridge);
+    await openMenuItem(root, "about");
+    await flush();
+
+    expect(bridge.calls).toContain("getDiagnostics");
+    const pre = document.querySelector<HTMLElement>(".diagnostics-pre");
+    expect(pre).not.toBeNull();
+    expect(pre?.hasAttribute("hidden")).toBe(true);
+
+    document.querySelector<HTMLElement>('[data-action="diagnostics-show"]')?.click();
+    await flush();
+
+    expect(pre?.hasAttribute("hidden")).toBe(false);
+    expect(pre?.textContent).toContain('"appVersion"');
+    const copy = document.querySelector<HTMLElement>('[data-action="diagnostics-copy"]');
+    expect(copy?.hasAttribute("hidden")).toBe(false);
+  });
+
+  it("copies the document to the clipboard", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true
+    });
+    const bridge = new FakeBridge();
+    const root = await mount(bridge);
+    await openMenuItem(root, "about");
+    document.querySelector<HTMLElement>('[data-action="diagnostics-show"]')?.click();
+    await flush();
+    document.querySelector<HTMLElement>('[data-action="diagnostics-copy"]')?.click();
+    await flush();
+
+    expect(writeText).toHaveBeenCalledWith(bridge.diagnostics);
+    expect(query(root, "#app-notice").textContent).toContain("copied");
+  });
+
+  it("selects the text when the clipboard is unavailable", async () => {
+    Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });
+    const bridge = new FakeBridge();
+    const root = await mount(bridge);
+    await openMenuItem(root, "about");
+    document.querySelector<HTMLElement>('[data-action="diagnostics-show"]')?.click();
+    await flush();
+    document.querySelector<HTMLElement>('[data-action="diagnostics-copy"]')?.click();
+    await flush();
+
+    expect(query(root, "#app-notice").textContent).toContain("clipboard is not available");
+    expect(document.querySelector(".diagnostics-pre")?.textContent).toContain("appVersion");
+  });
+
+  it("shows a readable error when the diagnostics cannot be read", async () => {
+    const bridge = new FakeBridge();
+    bridge.diagnosticsError = { code: "INTERNAL", message: "the diagnostics are unavailable" };
+    const root = await mount(bridge);
+    await openMenuItem(root, "about");
+    await flush();
+
+    expect(query(root, "#app-error").textContent).toContain("the diagnostics are unavailable");
   });
 });
 

@@ -2,6 +2,8 @@
 
 Only add a passing result after executing the check. Include commit/package hash, tool version, command or manual steps, expected and actual result, and date. Mark unavailable checks as unverified.
 
+Executed local checks are recorded per wave in `local-verification.md`. The remaining T40–T47 production gates and their exact status are tracked in `production-readiness.md`.
+
 | Area | Required evidence | Current status |
 |---|---|---|
 | Core | Deterministic transitions, input bounds, repeat and completion invariants | Pending |

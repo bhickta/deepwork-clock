@@ -22,6 +22,7 @@ import {
   type TimerCommandRequest
 } from "./contract";
 import type { Bridge } from "./bridge";
+import { APP_VERSION } from "./version";
 
 const DEFAULT_CONFIG: TimerConfig = {
   mode: "cycle",
@@ -49,6 +50,7 @@ function defaultSettings(): Settings {
     closeToTray: false,
     historyEnabled: true,
     retentionDays: 90,
+    viewMode: "normal",
     localShortcuts: {}
   };
 }
@@ -214,6 +216,39 @@ class DemoBackend {
 
   historySnapshot(): HistoryRecord[] {
     return this.history.map(cloneRecord);
+  }
+
+  /**
+   * A representative diagnostics document.
+   *
+   * The shape matches the desktop document: booleans and enum names only, no
+   * label, no identifiers and no paths.
+   */
+  diagnosticsJson(): string {
+    const settings = this.settings;
+    return JSON.stringify(
+      {
+        appVersion: APP_VERSION,
+        os: "browser-preview",
+        architecture: "unknown",
+        settingsRevision: settings.revision,
+        features: {
+          notifications: settings.notifications,
+          sound: settings.sound,
+          globalShortcutEnabled: settings.globalShortcutEnabled,
+          launchAtLogin: settings.launchAtLogin,
+          closeToTray: settings.closeToTray,
+          historyEnabled: settings.historyEnabled,
+          autoAdvance: settings.autoAdvance
+        },
+        timer: { mode: this.mode, phase: this.phase, status: this.status },
+        capabilities: DEMO_CAPABILITIES,
+        warningCodes: this.warningList.map((warning) => warning.code),
+        historyRecords: this.history.length
+      },
+      null,
+      2
+    );
   }
 
   apply(request: TimerCommandRequest): Snapshot {
@@ -566,6 +601,10 @@ export function createDemoBridge(
 
     async getCapabilities(): Promise<Capabilities> {
       return backend.capabilities();
+    },
+
+    async getDiagnostics(): Promise<string> {
+      return backend.diagnosticsJson();
     },
 
     async getWarnings(): Promise<AppError[]> {

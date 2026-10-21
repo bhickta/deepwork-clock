@@ -12,9 +12,11 @@ import {
   effectiveShortcut,
   installShortcuts,
   isMacPlatform,
+  shortcutLabel,
   SHORTCUTS
 } from "./shortcuts";
 import { t } from "./i18n";
+import { playCompletionChime } from "./sound";
 import { newRequestId, toAppError, type Bridge } from "./bridge";
 import type {
   Action,
@@ -35,6 +37,8 @@ export interface AppOptions {
   bridge: Bridge;
   now?: () => number;
   document?: Document;
+  /** Play one completion chime at the given volume (0 to 100). */
+  playSound?: (volumePercent: number) => void;
 }
 
 interface Preset {
@@ -72,6 +76,11 @@ export class App {
 
   private readonly now: () => number;
 
+  private readonly playSound: (volumePercent: number) => void;
+
+  /** The last phase that already made a sound, so a duplicate is silent. */
+  private chimedPhaseId: string | null = null;
+
   private snapshot: Snapshot | null = null;
 
   private settings: Settings | null = null;
@@ -89,6 +98,20 @@ export class App {
   private helpModal!: Modal;
 
   private aboutModal!: Modal;
+
+  private diagnosticsPre!: HTMLElement;
+
+  private diagnosticsStatus!: HTMLElement;
+
+  private diagnosticsShowButton!: HTMLButtonElement;
+
+  private diagnosticsCopyButton!: HTMLButtonElement;
+
+  private diagnosticsJson: string | null = null;
+
+  private diagnosticsPending: Promise<string | null> | null = null;
+
+  private diagnosticsToken = 0;
 
   private historyModal!: Modal;
 
@@ -152,6 +175,11 @@ export class App {
     this.bridge = options.bridge;
     this.doc = options.document ?? options.root.ownerDocument ?? document;
     this.now = options.now ?? (() => Date.now());
+    this.playSound =
+      options.playSound ??
+      ((volumePercent: number) => {
+        playCompletionChime(volumePercent, { document: this.doc });
+      });
   }
 
   /** The latest snapshot received from the backend. */
@@ -198,6 +226,7 @@ export class App {
       this.applyThemeSettings();
       this.updateHelpShortcuts();
       this.applyCapabilities();
+      this.applyViewMode(settings.viewMode);
       const snapshot = await this.bridge.getSnapshot();
       this.applySnapshot(snapshot);
       await this.loadRecovery();
@@ -305,6 +334,7 @@ export class App {
       onSave: (draft) => this.saveSettingsDraft(draft),
       onCancel: () => this.applyThemeSettings(),
       onPreview: (theme, textScale) => this.previewTheme(theme, textScale),
+      onPreviewSound: (volumePercent) => this.previewCompletionSound(volumePercent),
       announce: (message) => this.announce(message)
     });
 
@@ -480,7 +510,7 @@ export class App {
       const keys = el("kbd", { text: describeShortcut(spec, isMac) });
       this.helpKeys.set(spec.id, keys);
       return el("tr", { data: { shortcutId: spec.id } }, [
-        el("th", { attrs: { scope: "row" }, text: spec.label }),
+        el("th", { attrs: { scope: "row" }, text: shortcutLabel(spec) }),
         el("td", { class: "help__keys" }, [keys])
       ]);
     });
@@ -501,7 +531,11 @@ export class App {
   }
 
   private createAboutModal(): Modal {
-    const modal = new Modal(this.doc, { title: t("about.title"), size: "small" });
+    const modal = new Modal(this.doc, {
+      title: t("about.title"),
+      size: "small",
+      onClose: () => this.resetDiagnostics()
+    });
     modal.body.appendChild(el("p", { class: "modal__lead", text: t("about.body") }));
     modal.body.appendChild(el("p", { text: t("about.version", { version: APP_VERSION }) }));
     modal.body.appendChild(el("p", { text: t("about.privacy") }));
@@ -513,10 +547,167 @@ export class App {
         text: this.bridge.kind === "demo" ? t("about.mode.demo") : t("about.mode.native")
       })
     );
+    modal.body.appendChild(el("p", { class: "modal__note", text: t("about.sound") }));
+
+    this.diagnosticsShowButton = el("button", {
+      class: "button button--small",
+      attrs: { type: "button", "data-action": "diagnostics-show" },
+      text: t("about.diagnostics.show"),
+      on: { click: () => void this.showDiagnostics() }
+    });
+    this.diagnosticsCopyButton = el("button", {
+      class: "button button--small",
+      attrs: { type: "button", "data-action": "diagnostics-copy" },
+      text: t("about.diagnostics.copy"),
+      on: { click: () => void this.copyDiagnostics() }
+    });
+    setHidden(this.diagnosticsCopyButton, true);
+    this.diagnosticsStatus = el("p", { class: "field__note", attrs: { role: "status" } });
+    setHidden(this.diagnosticsStatus, true);
+    this.diagnosticsPre = el("pre", {
+      class: "diagnostics-pre",
+      attrs: {
+        tabindex: "0",
+        "aria-label": t("about.diagnostics"),
+        spellcheck: "false"
+      }
+    });
+    setHidden(this.diagnosticsPre, true);
+
+    modal.body.appendChild(
+      el(
+        "section",
+        { class: "about__section", attrs: { "aria-labelledby": "about-diagnostics-heading" } },
+        [
+          el("h3", {
+            class: "about__section-title",
+            id: "about-diagnostics-heading",
+            text: t("about.diagnostics")
+          }),
+          el("p", { class: "modal__note", text: t("about.diagnostics.lead") }),
+          el("div", { class: "about__actions" }, [
+            this.diagnosticsShowButton,
+            this.diagnosticsCopyButton
+          ]),
+          this.diagnosticsStatus,
+          this.diagnosticsPre
+        ]
+      )
+    );
     modal.body.appendChild(
       el("p", { class: "modal__note", text: `${APP_NAME} — ${t("about.version", { version: APP_VERSION })}` })
     );
     return modal;
+  }
+
+  /**
+   * Ask the desktop for a fresh diagnostics document when the dialog opens.
+   *
+   * It stays hidden until the user asks to see it, so a long document never
+   * fills the About dialog on its own.
+   */
+  private async loadDiagnostics(): Promise<string | null> {
+    if (this.diagnosticsJson !== null) {
+      return this.diagnosticsJson;
+    }
+    const pending = this.diagnosticsPending;
+    if (pending) {
+      return pending;
+    }
+    const token = this.diagnosticsToken;
+    const request = this.fetchDiagnostics(token);
+    this.diagnosticsPending = request;
+    try {
+      return await request;
+    } finally {
+      if (this.diagnosticsPending === request) {
+        this.diagnosticsPending = null;
+      }
+    }
+  }
+
+  private async fetchDiagnostics(token: number): Promise<string | null> {
+    try {
+      const json = await this.bridge.getDiagnostics();
+      if (token !== this.diagnosticsToken) {
+        return null;
+      }
+      this.diagnosticsJson = json;
+      return json;
+    } catch (error) {
+      if (token !== this.diagnosticsToken) {
+        return null;
+      }
+      const message = toAppError(error).message;
+      this.showError(t("error.diagnostics_failed", { message }));
+      setText(this.diagnosticsStatus, t("about.diagnostics.failed"));
+      setHidden(this.diagnosticsStatus, false);
+      return null;
+    }
+  }
+
+  /** Reveal the fetched document on request. */
+  private async showDiagnostics(): Promise<void> {
+    const json = await this.loadDiagnostics();
+    if (json === null) {
+      return;
+    }
+    setText(this.diagnosticsPre, json);
+    setHidden(this.diagnosticsPre, false);
+    setHidden(this.diagnosticsShowButton, true);
+    setHidden(this.diagnosticsCopyButton, false);
+    setHidden(this.diagnosticsStatus, true);
+    // The button that had focus is gone, so focus moves to the text itself.
+    this.diagnosticsPre.focus();
+  }
+
+  private async copyDiagnostics(): Promise<void> {
+    const json = this.diagnosticsJson;
+    if (json === null) {
+      return;
+    }
+    try {
+      const clipboard = this.doc.defaultView?.navigator.clipboard;
+      if (!clipboard || typeof clipboard.writeText !== "function") {
+        throw new Error("The clipboard is not available.");
+      }
+      await clipboard.writeText(json);
+      this.showNotice(t("about.diagnostics.copied"));
+      this.announce(t("about.diagnostics.copied"));
+    } catch {
+      // Select the text so the keyboard copy shortcut still works.
+      this.selectDiagnostics();
+      this.showNotice(t("about.diagnostics.copy_manual"));
+      this.announce(t("about.diagnostics.copy_manual"));
+    }
+  }
+
+  private selectDiagnostics(): void {
+    const selection = this.doc.defaultView?.getSelection?.() ?? null;
+    if (!selection) {
+      return;
+    }
+    const range = this.doc.createRange();
+    range.selectNodeContents(this.diagnosticsPre);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    this.diagnosticsPre.focus();
+  }
+
+  /** Forget the previous document so every opening fetches a fresh one. */
+  private resetDiagnostics(): void {
+    this.diagnosticsToken += 1;
+    this.diagnosticsJson = null;
+    this.diagnosticsPending = null;
+    if (!this.diagnosticsPre) {
+      return;
+    }
+    setText(this.diagnosticsPre, "");
+    setHidden(this.diagnosticsPre, true);
+    setHidden(this.diagnosticsShowButton, false);
+    setHidden(this.diagnosticsCopyButton, true);
+    setText(this.diagnosticsStatus, "");
+    setHidden(this.diagnosticsStatus, true);
   }
 
   private installShortcuts(): void {
@@ -558,6 +749,7 @@ export class App {
       // An older revision never replaces a newer one.
       return;
     }
+    this.maybePlayCompletionSound(current, snapshot);
     this.snapshot = snapshot;
     this.snapshotReceivedAt = this.now();
     this.renderTimer();
@@ -565,6 +757,62 @@ export class App {
     if (snapshot.status === "recovery_pending" && !this.recovery) {
       void this.loadRecovery();
     }
+  }
+
+  /**
+   * Play one chime when a phase really completes.
+   *
+   * The initial render, a recovered session and a repeated snapshot for the
+   * same phase stay silent. The sound is best effort and never touches the
+   * timer: a failure here cannot undo or delay a completion.
+   */
+  private maybePlayCompletionSound(previous: Snapshot | null, next: Snapshot): void {
+    if (!previous) {
+      return;
+    }
+    const settings = this.settings;
+    if (!settings || !settings.sound || settings.soundVolume <= 0) {
+      return;
+    }
+    if (next.status !== "completed") {
+      // Auto-advance publishes the next phase instead of a completed one. The
+      // focus counter only grows when a focus phase really completed, so it is
+      // the durable signal to use here. Skips do not change it.
+      if (
+        next.status === "idle" &&
+        next.completedFocusCount > previous.completedFocusCount
+      ) {
+        const key = `auto-advance:${next.completedFocusCount}`;
+        if (key !== this.chimedPhaseId) {
+          this.chimedPhaseId = key;
+          this.playCompletionSound(settings.soundVolume);
+        }
+      }
+      return;
+    }
+    if (previous.status === "completed") {
+      return;
+    }
+    const phaseId = next.phaseId;
+    if (phaseId === null || phaseId === this.chimedPhaseId) {
+      return;
+    }
+    this.chimedPhaseId = phaseId;
+    this.playCompletionSound(settings.soundVolume);
+  }
+
+  /** Play the chime; an audio device failure is deliberately harmless. */
+  private playCompletionSound(volumePercent: number): void {
+    try {
+      this.playSound(volumePercent);
+    } catch {
+      // A missing or busy audio device must never affect the timer.
+    }
+  }
+
+  /** The explicit preview in the settings dialog ignores the on/off toggle. */
+  private previewCompletionSound(volumePercent: number): void {
+    this.playCompletionSound(volumePercent);
   }
 
   /** Fetch the checkpoint of an interrupted session. */
@@ -1075,16 +1323,40 @@ export class App {
     }
   }
 
+  /** Apply the layout that the backend restored, without a window request. */
+  private applyViewMode(mode: "normal" | "compact"): void {
+    this.viewMode = mode;
+    this.root.setAttribute("data-view", mode);
+    this.updateCompactButton();
+    this.updateWindowControls();
+  }
+
+  /**
+   * Remember the layout so a restored compact window never comes back with
+   * the normal layout. Best effort: the window already changed.
+   */
+  private async rememberViewMode(): Promise<void> {
+    const settings = this.settings;
+    if (!settings || settings.viewMode === this.viewMode) {
+      return;
+    }
+    try {
+      this.settings = await this.bridge.saveSettings({
+        expectedSettingsRevision: settings.revision,
+        settings: { ...settings, viewMode: this.viewMode }
+      });
+    } catch {
+      // Another save may have won the revision race. The layout stays as the
+      // user left it; the next settings save records it again.
+    }
+  }
+
   private async toggleCompact(): Promise<void> {
     const next = this.viewMode === "normal" ? "compact" : "normal";
     try {
       await this.bridge.windowAction(next);
-      this.viewMode = next;
-      this.root.setAttribute("data-view", next);
-      this.updateCompactButton();
-      // A plain compact switch never sends a second window request; the
-      // floating state is derived from the compact and pin flags.
-      this.updateWindowControls();
+      this.applyViewMode(next);
+      void this.rememberViewMode();
       this.announce(next === "compact" ? t("window.compact") : t("window.normal"));
     } catch (error) {
       this.showError(toAppError(error).message);
@@ -1105,11 +1377,9 @@ export class App {
     try {
       // One request carries the whole change: the backend owns the window.
       await this.bridge.windowAction(floating ? "unfloat" : "float");
-      this.viewMode = floating ? "normal" : "compact";
       this.pinned = !floating;
-      this.root.setAttribute("data-view", this.viewMode);
-      this.updateCompactButton();
-      this.updateWindowControls();
+      this.applyViewMode(floating ? "normal" : "compact");
+      void this.rememberViewMode();
       if (state === "unknown") {
         // The request was sent, but the desktop decides the result.
         this.showNotice(t("float.request_sent"));
@@ -1236,6 +1506,10 @@ export class App {
   }
 
   private openAbout(): void {
+    this.resetDiagnostics();
     this.aboutModal.openDialog();
+    // Fetch immediately so the document is ready when it is requested; the
+    // text still stays hidden until the user presses Show diagnostics.
+    void this.loadDiagnostics();
   }
 }

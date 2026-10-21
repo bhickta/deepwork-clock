@@ -18,6 +18,7 @@ import {
   isModifierOnlyKey,
   normalizeLocalShortcuts,
   SHORTCUTS,
+  shortcutLabel,
   validateShortcutChord,
   type ShortcutIssue,
   type ShortcutSpec
@@ -31,6 +32,8 @@ export interface SettingsViewOptions {
   onCancel(): void;
   /** Live preview while the dialog is open. */
   onPreview(theme: Theme, textScale: number): void;
+  /** Play the completion chime once, even while the toggle is off. */
+  onPreviewSound(volumePercent: number): void;
   announce(message: string): void;
 }
 
@@ -195,6 +198,14 @@ export class SettingsView {
 
   private readonly sound: ToggleControls;
 
+  private readonly soundVolume: HTMLInputElement;
+
+  private readonly soundVolumeOutput: HTMLOutputElement;
+
+  private readonly previewSound: HTMLButtonElement;
+
+  private readonly autoAdvance: ToggleControls;
+
   private readonly globalShortcutEnabled: ToggleControls;
 
   private readonly globalShortcut: HTMLInputElement;
@@ -286,7 +297,43 @@ export class SettingsView {
       undefined,
       onChange
     );
-    this.sound = toggleControls("sound", t("settings.sound"), undefined, onChange);
+    this.sound = toggleControls("sound", t("settings.sound"), t("settings.sound.hint"), () => {
+      onChange();
+      this.updateSoundControls();
+    });
+
+    this.soundVolume = el("input", {
+      class: "range",
+      attrs: {
+        type: "range",
+        id: "sound-volume",
+        min: "0",
+        max: "100",
+        step: "1"
+      }
+    });
+    this.soundVolumeOutput = el("output", {
+      class: "range-output",
+      attrs: { for: "sound-volume", id: "sound-volume-output" },
+      text: "60%"
+    });
+    this.soundVolume.addEventListener("input", () => {
+      this.updateSoundVolumeOutput();
+      onChange();
+    });
+    this.previewSound = el("button", {
+      class: "button button--small",
+      attrs: { type: "button", "data-action": "preview-sound" },
+      text: t("settings.sound.preview"),
+      on: { click: () => this.options.onPreviewSound(this.selectedVolume()) }
+    });
+
+    this.autoAdvance = toggleControls(
+      "auto-advance",
+      t("settings.auto_advance"),
+      t("settings.auto_advance.hint"),
+      onChange
+    );
     this.globalShortcutEnabled = toggleControls(
       "global-shortcut-enabled",
       t("settings.global_shortcut"),
@@ -378,7 +425,8 @@ export class SettingsView {
             el("label", { attrs: { for: "mode-cycle" }, text: t("settings.mode.cycle") })
           ])
         ]),
-        el("p", { class: "field__hint", text: t("settings.mode.hint") })
+        el("p", { class: "field__hint", text: t("settings.mode.hint") }),
+        this.autoAdvance.wrapper
       ]),
       el("fieldset", { class: "fieldset" }, [
         el("legend", { class: "fieldset__legend", text: t("settings.durations") }),
@@ -416,7 +464,19 @@ export class SettingsView {
       el("fieldset", { class: "fieldset" }, [
         el("legend", { class: "fieldset__legend", text: t("settings.sound") }),
         this.notifications.wrapper,
-        this.sound.wrapper
+        this.sound.wrapper,
+        el("div", { class: "field" }, [
+          el("label", {
+            class: "field__label",
+            attrs: { for: "sound-volume" },
+            text: t("settings.sound.volume")
+          }),
+          el("div", { class: "range-row" }, [
+            this.soundVolume,
+            this.soundVolumeOutput,
+            this.previewSound
+          ])
+        ])
       ]),
       el("fieldset", { class: "fieldset" }, [
         el("legend", { class: "fieldset__legend", text: t("settings.system") }),
@@ -546,6 +606,46 @@ export class SettingsView {
       }
       setHidden(controls.note, false);
     }
+    this.updateSoundControls();
+  }
+
+  /** The volume range mirrors the toggle: no usable volume while sound is off. */
+  private updateSoundControls(): void {
+    const capability = this.capabilities["sound"];
+    const blocked =
+      capability !== undefined &&
+      (capability.state === "unavailable" || capability.state === "permission_required");
+    const usable = this.sound.input.checked && !blocked;
+    this.soundVolume.disabled = !usable;
+    if (usable) {
+      this.soundVolume.removeAttribute("aria-disabled");
+    } else {
+      this.soundVolume.setAttribute("aria-disabled", "true");
+    }
+    // An explicit preview is allowed while the completion sound is off, but
+    // not when the desktop says it cannot play sound at all.
+    this.previewSound.disabled = blocked;
+    if (blocked) {
+      this.previewSound.setAttribute("aria-disabled", "true");
+    } else {
+      this.previewSound.removeAttribute("aria-disabled");
+    }
+    this.updateSoundVolumeOutput();
+  }
+
+  private updateSoundVolumeOutput(): void {
+    setText(
+      this.soundVolumeOutput,
+      t("settings.sound.volume_value", { value: this.selectedVolume() })
+    );
+  }
+
+  private selectedVolume(): number {
+    const value = Number.parseInt(this.soundVolume.value, 10);
+    if (!Number.isFinite(value)) {
+      return this.base?.soundVolume ?? 60;
+    }
+    return Math.min(100, Math.max(0, value));
   }
 
   private buildShortcutsSection(): HTMLElement {
@@ -588,13 +688,13 @@ export class SettingsView {
     const label = el("label", {
       class: "shortcut-row__label",
       attrs: { for: inputId },
-      text: spec.label
+      text: shortcutLabel(spec)
     });
     const reset = el("button", {
       class: "button shortcut-row__reset",
       attrs: { type: "button", "data-action": `shortcut-reset-${spec.id}` },
       text: t("settings.shortcuts.reset"),
-      title: t("settings.shortcuts.reset_action", { action: spec.label }),
+      title: t("settings.shortcuts.reset_action", { action: shortcutLabel(spec) }),
       on: { click: () => this.resetShortcut(spec) }
     });
     const wrapper = el("div", { class: "shortcut-row", data: { shortcutId: spec.id } }, [
@@ -756,6 +856,8 @@ export class SettingsView {
     });
     this.notifications.input.checked = settings.notifications;
     this.sound.input.checked = settings.sound;
+    this.soundVolume.value = String(settings.soundVolume);
+    this.autoAdvance.input.checked = settings.autoAdvance;
     this.globalShortcutEnabled.input.checked = settings.globalShortcutEnabled;
     this.globalShortcut.value = settings.globalShortcut;
     this.launchAtLogin.input.checked = settings.launchAtLogin;
@@ -763,6 +865,7 @@ export class SettingsView {
     this.historyEnabled.input.checked = settings.historyEnabled;
     this.retentionDays.value = String(settings.retentionDays);
     this.populateShortcuts(settings);
+    this.updateSoundControls();
     this.clearErrors();
   }
 
@@ -935,14 +1038,15 @@ export class SettingsView {
       config,
       notifications: this.notifications.input.checked,
       sound: this.sound.input.checked,
-      soundVolume: base.soundVolume,
-      autoAdvance: base.autoAdvance,
+      soundVolume: this.selectedVolume(),
+      autoAdvance: this.autoAdvance.input.checked,
       globalShortcutEnabled: shortcutEnabled,
       globalShortcut: shortcutValue,
       launchAtLogin: this.launchAtLogin.input.checked,
       closeToTray: this.closeToTray.input.checked,
       historyEnabled: this.historyEnabled.input.checked,
       retentionDays: retentionValue,
+      viewMode: base.viewMode,
       // Only usable overrides that differ from the default are stored.
       localShortcuts: normalizeLocalShortcuts(this.localShortcuts, this.isMac)
     };

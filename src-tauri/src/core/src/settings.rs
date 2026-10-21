@@ -78,6 +78,25 @@ impl Theme {
     }
 }
 
+/// The last window layout, so a compact window does not come back with the
+/// normal layout (or the other way round) after a restart.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ViewMode {
+    #[default]
+    Normal,
+    Compact,
+}
+
+impl ViewMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ViewMode::Normal => "normal",
+            ViewMode::Compact => "compact",
+        }
+    }
+}
+
 /// The complete settings document as exchanged with the frontend.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -95,6 +114,8 @@ pub struct Settings {
     pub close_to_tray: bool,
     pub history_enabled: bool,
     pub retention_days: u32,
+    /// The window layout that was last in use.
+    pub view_mode: ViewMode,
     /// Moves to the next phase automatically after a phase completes while the
     /// application is awake. Off by default, because an automatic cycle has to
     /// be an explicit decision.
@@ -121,6 +142,7 @@ impl Default for Settings {
             close_to_tray: false,
             history_enabled: true,
             retention_days: 90,
+            view_mode: ViewMode::Normal,
             auto_advance: false,
             sound_volume: DEFAULT_SOUND_VOLUME,
             local_shortcuts: BTreeMap::new(),
@@ -263,6 +285,7 @@ mod tests {
         assert!(!settings.auto_advance, "auto-advance is opt-in");
         assert_eq!(settings.sound_volume, DEFAULT_SOUND_VOLUME);
         assert!(settings.local_shortcuts.is_empty());
+        assert_eq!(settings.view_mode, ViewMode::Normal);
     }
 
     #[test]

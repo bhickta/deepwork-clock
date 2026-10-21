@@ -57,6 +57,7 @@ export function makeSettings(overrides: Partial<Settings> = {}): Settings {
     closeToTray: false,
     historyEnabled: true,
     retentionDays: 90,
+    viewMode: "normal",
     localShortcuts: {},
     ...overrides
   };
@@ -168,6 +169,10 @@ export class FakeBridge implements Bridge {
 
   exportResult: string | null = "/tmp/history.csv";
 
+  diagnostics = '{\n  "appVersion": "0.1.0-alpha.1"\n}';
+
+  diagnosticsError: unknown = null;
+
   commandError: unknown = null;
 
   saveError: unknown = null;
@@ -230,6 +235,14 @@ export class FakeBridge implements Bridge {
   async getCapabilities(): Promise<Capabilities> {
     this.calls.push("getCapabilities");
     return this.capabilities;
+  }
+
+  async getDiagnostics(): Promise<string> {
+    this.calls.push("getDiagnostics");
+    if (this.diagnosticsError) {
+      throw this.diagnosticsError;
+    }
+    return this.diagnostics;
   }
 
   async getWarnings(): Promise<AppError[]> {
