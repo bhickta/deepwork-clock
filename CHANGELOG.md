@@ -48,6 +48,14 @@ the manual screen-reader matrix has not been completed.
   Clippy, tests, accessibility smoke test) and a native release matrix for
   Linux x64, Windows x64, macOS arm64 and macOS x64.
 
+### Fixed
+
+- Launching from a desktop application menu on Linux. The installed
+  `.desktop` file is now named `deepwork-clock.desktop`; the previous name
+  contained a space, which made GIO's systemd launcher look for an executable
+  called `Clock.desktop_*.scope` and fail silently. The menu label is still
+  "Deepwork Clock".
+
 ### Not included in this release
 
 - Code signing and notarization.

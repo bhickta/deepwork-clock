@@ -1,0 +1,11 @@
+[Desktop Entry]
+Categories={{categories}}
+Comment=A calm, accessible desktop focus timer for deep work
+Exec={{exec}}
+Icon={{icon}}
+Name=Deepwork Clock
+GenericName=Focus Timer
+Keywords=focus;timer;pomodoro;productivity;offline;
+Terminal=false
+Type=Application
+StartupWMClass=deepwork-clock
