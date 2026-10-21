@@ -1,0 +1,26 @@
+# The engine crate is its own workspace root so that it can be built and tested on its own,
+# without the Tauri backend package. The backend package depends on it by path.
+[workspace]
+
+[package]
+name = "deepwork-engine"
+version = "0.1.0-alpha.1"
+edition = "2021"
+rust-version = "1.74"
+description = "Deterministic, platform-free countdown and focus-cycle engine for Deepwork Clock"
+license = "MIT"
+publish = false
+# The engine keeps its unit tests inside the library (`src-tauri/src/engine/tests/`), so cargo
+# must not treat that directory as a set of integration test binaries.
+autotests = false
+autoexamples = false
+autobenches = false
+
+[lib]
+name = "deepwork_engine"
+path = "mod.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
