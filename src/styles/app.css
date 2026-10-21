@@ -67,7 +67,8 @@
   z-index: 20;
   display: flex;
   flex-direction: column;
-  min-width: 11rem;
+  min-width: min(11rem, calc(100vw - 1rem));
+  max-width: calc(100vw - 1rem);
   padding: var(--space-1);
   background: var(--surface-elevated);
   border: 1px solid var(--border-strong);
@@ -90,6 +91,8 @@
   font-weight: 550;
   text-align: left;
   cursor: pointer;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .menu__item:hover {
@@ -105,6 +108,7 @@
   color: var(--text-muted);
   font-size: 0.75rem;
   font-variant-numeric: tabular-nums;
+  flex: none;
 }
 
 /* Main ------------------------------------------------------------------- */
@@ -300,6 +304,8 @@
   align-items: center;
   gap: 6px;
   text-align: center;
+  /* The digits size themselves against this container, see below. */
+  container-type: inline-size;
 }
 
 .phase-badge {
@@ -347,13 +353,32 @@
 }
 
 .timer-digits {
-  font-size: var(--timer-size);
+  /* The size of the digits, set by the view; the width cap below applies to
+     every view in the same way. */
+  --timer-size-display: var(--timer-size);
+  font-size: var(--timer-size-display);
   font-weight: 620;
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;
   letter-spacing: -0.03em;
   line-height: 1.05;
   color: var(--text);
+  /* The digits must never impose a minimum width on the page. */
+  min-width: 0;
+  max-width: 100%;
+}
+
+/*
+ * The digits are the widest thing on the screen: "24:00:00" is eight
+ * characters. When the text is scaled up in a narrow window they would push
+ * the page sideways, so their size is capped against the width of the timer
+ * panel. The digits keep growing with the text scale until the width of the
+ * panel is the limit, and the rest of the text stays at the chosen size.
+ */
+@supports (font-size: 1cqw) {
+  .timer-digits {
+    font-size: min(var(--timer-size-display), 24cqw);
+  }
 }
 
 .timer-status {
@@ -678,6 +703,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: var(--space-3);
   padding: var(--space-4) var(--space-4) var(--space-2);
 }
@@ -685,6 +711,13 @@
 .modal__title {
   font-size: 1.125rem;
   font-weight: 650;
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+.modal__close {
+  flex: none;
+  margin-left: auto;
 }
 
 .modal__description {
@@ -696,9 +729,11 @@
 .modal__body {
   padding: var(--space-2) var(--space-4) var(--space-4);
   overflow-y: auto;
+  overflow-x: auto;
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  min-width: 0;
 }
 
 .modal__lead {
@@ -713,10 +748,15 @@
 .modal__footer {
   display: flex;
   justify-content: flex-end;
+  flex-wrap: wrap;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
   border-top: 1px solid var(--border);
   background: var(--canvas-subtle);
+}
+
+.modal__footer .button {
+  min-width: 0;
 }
 
 .help__table {
@@ -750,6 +790,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+  min-width: 0;
 }
 
 .fieldset {
@@ -760,6 +801,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  min-width: 0;
 }
 
 .fieldset__legend {
@@ -769,29 +811,40 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-muted);
+  /* A long legend wraps inside the field instead of widening it. */
+  width: 100%;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .field {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+  min-width: 0;
 }
 
 .field__label {
   font-size: 0.875rem;
   font-weight: 600;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .field__hint,
 .field__note {
   color: var(--text-muted);
   font-size: 0.8125rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .field__error {
   color: var(--danger);
   font-size: 0.8125rem;
   font-weight: 600;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .input {
@@ -802,6 +855,9 @@
   background: var(--surface-elevated);
   color: var(--text);
   width: 100%;
+  /* A form control may shrink below its intrinsic size. */
+  min-width: 0;
+  max-width: 100%;
 }
 
 .input--number {
@@ -825,10 +881,18 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  min-width: 0;
+}
+
+.radio-option label {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .toggle-row__label {
   font-size: 0.9375rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .field--toggle {
@@ -846,6 +910,7 @@
   display: grid;
   grid-template-columns: 1fr;
   gap: var(--space-3);
+  min-width: 0;
 }
 
 .duration-group {
@@ -856,6 +921,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+  min-width: 0;
 }
 
 .duration-group__legend {
@@ -866,6 +932,7 @@
 
 .duration-parts {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-2);
 }
 
@@ -873,8 +940,9 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  flex: 1 1 0;
-  min-width: 0;
+  /* The parts move into another row when the fields need the room. */
+  flex: 1 1 4rem;
+  min-width: 3rem;
 }
 
 .duration-part .input--number {
@@ -884,22 +952,26 @@
 .duration-part__label {
   font-size: 0.75rem;
   color: var(--text-muted);
+  overflow-wrap: anywhere;
 }
 
 .range-row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--space-3);
 }
 
 .range {
-  flex: 1;
+  flex: 1 1 6rem;
+  min-width: 0;
   min-height: var(--control-size);
   accent-color: var(--accent);
 }
 
 .range-output {
-  min-width: 3.5rem;
+  flex: none;
+  min-width: 0;
   text-align: right;
   font-variant-numeric: tabular-nums;
   font-weight: 600;
@@ -991,7 +1063,7 @@
 }
 
 [data-view="compact"] .timer-digits {
-  font-size: var(--timer-size-compact);
+  --timer-size-display: var(--timer-size-compact);
   line-height: 1;
 }
 
@@ -1028,9 +1100,5 @@
   .app-footer {
     padding-left: var(--space-3);
     padding-right: var(--space-3);
-  }
-
-  .timer-digits {
-    font-size: 3rem;
   }
 }

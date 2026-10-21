@@ -78,3 +78,58 @@ export async function hasHorizontalOverflow(page: Page): Promise<boolean> {
     () => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1
   );
 }
+
+/**
+ * Measure the horizontal overflow of the page and of the nested boxes.
+ *
+ * A page can scroll sideways because of one wide element, and a dialog can
+ * clip its own content even when the page itself does not scroll. Both are
+ * checked here.
+ */
+export interface OverflowReport {
+  root: number;
+  boxes: Record<string, number>;
+  outsideViewport: string[];
+}
+
+export async function measureOverflow(page: Page): Promise<OverflowReport> {
+  return page.evaluate(() => {
+    const root = document.documentElement;
+    const boxes: Record<string, number> = {};
+    const selectors = [
+      ".modal",
+      ".modal__body",
+      ".modal__footer",
+      ".settings-form",
+      ".fieldset",
+      ".duration-group",
+      ".duration-parts",
+      ".timer-panel",
+      ".app-header",
+      ".app-main"
+    ];
+    for (const selector of selectors) {
+      const node = document.querySelector(selector);
+      if (node) {
+        boxes[selector] = node.scrollWidth - node.clientWidth;
+      }
+    }
+    const outside: string[] = [];
+    const limit = root.clientWidth;
+    for (const node of document.querySelectorAll<HTMLElement>("#app *")) {
+      const rect = node.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) {
+        continue;
+      }
+      if (rect.right > limit + 1 || rect.left < -1) {
+        const label = node.className ? `.${String(node.className).split(" ")[0]}` : node.tagName.toLowerCase();
+        outside.push(`${label} (${Math.round(rect.left)}..${Math.round(rect.right)})`);
+      }
+    }
+    return {
+      root: root.scrollWidth - root.clientWidth,
+      boxes,
+      outsideViewport: outside.slice(0, 10)
+    };
+  });
+}

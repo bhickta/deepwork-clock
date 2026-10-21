@@ -14,6 +14,7 @@ import {
   expectNoSeriousAxeViolations,
   hasHorizontalOverflow,
   isFullyVisible,
+  measureOverflow,
   openPreview,
   saveEvidence
 } from "./helpers";
@@ -277,5 +278,112 @@ test.describe("large text", () => {
     expect(scale).toBe("2");
     expect(await hasHorizontalOverflow(page)).toBe(false);
     await saveEvidence(page, "07-text-scale-200");
+  });
+});
+
+test.describe("200% text in a narrow window", () => {
+  test.use({ viewport: { width: 360, height: 720 } });
+
+  test("the settings dialog reflows without clipping its content", async ({ page }) => {
+    await openPreview(page);
+    await page.click('[data-action="menu"]');
+    await page.click('[data-menu-item="settings"]');
+    await page.fill("#text-scale", "2");
+    await page.dispatchEvent("#text-scale", "input");
+    await page.waitForTimeout(200);
+
+    const report = await measureOverflow(page);
+    expect(report.root, "the page must not scroll sideways").toBeLessThanOrEqual(2);
+    for (const [selector, overflow] of Object.entries(report.boxes)) {
+      expect(overflow, `${selector} must not clip its content`).toBeLessThanOrEqual(2);
+    }
+    expect(report.outsideViewport, "no control may leave the viewport").toEqual([]);
+
+    // The controls stay visible and usable.
+    await expect(page.locator("#focus-minutes")).toBeVisible();
+    await expect(page.locator("#focus-seconds")).toBeVisible();
+    await expect(page.locator(".modal__footer .button--primary")).toBeVisible();
+    await expect(page.locator(".modal__footer .button:not(.button--primary)")).toBeVisible();
+    await expect(page.locator(".modal__close")).toBeVisible();
+
+    await saveEvidence(page, "11-reflow-360x720-200");
+    await expectNoSeriousAxeViolations(page, "settings dialog at 200% text");
+  });
+
+  test("the longest duration still fits the timer panel", async ({ page }) => {
+    await openPreview(page);
+    await page.click('[data-action="menu"]');
+    await page.click('[data-menu-item="settings"]');
+    await page.fill("#text-scale", "2");
+    await page.dispatchEvent("#text-scale", "input");
+    await page.waitForTimeout(200);
+    await page.locator(".modal__footer .button--primary").click();
+    await page.waitForTimeout(150);
+
+    const box = await page.evaluate(() => {
+      const digits = document.querySelector("#timer-digits");
+      const panel = document.querySelector(".timer-panel");
+      if (!digits || !panel) {
+        return null;
+      }
+      const previous = digits.textContent;
+      digits.textContent = "24:00:00";
+      const rect = digits.getBoundingClientRect();
+      const panelRect = panel.getBoundingClientRect();
+      const result = {
+        width: Math.round(rect.width),
+        panelContent: panel.clientWidth,
+        fits: rect.right <= panelRect.right + 1 && rect.left >= panelRect.left - 1
+      };
+      digits.textContent = previous;
+      return result;
+    });
+
+    expect(box).not.toBeNull();
+    expect(box?.fits, "24:00:00 has to fit inside the timer panel").toBe(true);
+    expect(box?.width ?? 0).toBeLessThanOrEqual(box?.panelContent ?? 0);
+
+    const report = await measureOverflow(page);
+    expect(report.root).toBeLessThanOrEqual(2);
+    expect(report.outsideViewport).toEqual([]);
+  });
+
+  test("the longest duration fits the compact panel as well", async ({ page }) => {
+    await openPreview(page);
+    await page.click('[data-action="compact"]');
+    await page.click('[data-action="menu"]');
+    await page.click('[data-menu-item="settings"]');
+    await page.fill("#text-scale", "2");
+    await page.dispatchEvent("#text-scale", "input");
+    await page.waitForTimeout(200);
+    await page.locator(".modal__footer .button--primary").click();
+    await page.waitForTimeout(150);
+
+    const box = await page.evaluate(() => {
+      const digits = document.querySelector("#timer-digits");
+      const panel = document.querySelector(".timer-panel");
+      if (!digits || !panel) {
+        return null;
+      }
+      const previous = digits.textContent;
+      digits.textContent = "24:00:00";
+      const rect = digits.getBoundingClientRect();
+      const panelRect = panel.getBoundingClientRect();
+      const result = {
+        width: Math.round(rect.width),
+        panelContent: panel.clientWidth,
+        fits: rect.right <= panelRect.right + 1 && rect.left >= panelRect.left - 1
+      };
+      digits.textContent = previous;
+      return result;
+    });
+
+    expect(box).not.toBeNull();
+    expect(box?.fits, "24:00:00 has to fit inside the compact timer panel").toBe(true);
+    expect(box?.width ?? 0).toBeLessThanOrEqual(box?.panelContent ?? 0);
+
+    const report = await measureOverflow(page);
+    expect(report.root, "the compact view must not scroll sideways").toBeLessThanOrEqual(2);
+    expect(report.outsideViewport).toEqual([]);
   });
 });
