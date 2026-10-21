@@ -107,7 +107,7 @@ test.describe("frontend preview (demo bridge)", () => {
 
   test("the compact view is reachable without losing the timer", async ({ page }) => {
     await openPreview(page);
-    await page.getByRole("button", { name: "Compact view" }).click();
+    await page.getByRole("button", { name: "Compact view", exact: true }).click();
     await expect(page.locator("#app")).toHaveAttribute("data-view", "compact");
     await expect(page.getByRole("timer")).toBeVisible();
 

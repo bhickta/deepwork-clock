@@ -100,3 +100,21 @@ window-manager-rule test.
 - Any screen reader (Orca, NVDA, Narrator, VoiceOver).
 - Any Windows or macOS runtime behaviour.
 - T40–T47 production gates; see `production-readiness.md`.
+
+### Final automated gate after the documentation wave
+
+- `npm run typecheck`, `npm run lint`: clean.
+- `npm test -- --run`: 12 files, 168 tests passed.
+- `npm run test:scripts`: 18 tests passed.
+- `npm run test:a11y`: 9 browser checks passed. One selector became ambiguous
+  after the new floating button ("Compact view" also matched "Floating compact
+  view"); the check now uses an exact accessible name.
+- `npm run build`: passed; the completion chime is emitted as a same-origin
+  asset.
+- Docker: `cargo test --manifest-path src-tauri/Cargo.toml --all-targets` ->
+  71 passed; the desktop-free core -> 62 passed; Clippy `-D warnings` and
+  `cargo fmt --check` clean.
+- `npm run tauri -- build --bundles deb` produced
+  `deepwork-clock_0.1.0-alpha.1_amd64.deb` (2.5 MB) containing
+  `deepwork-clock.desktop` with no space in the file name. It was **not**
+  installed during this wave.
