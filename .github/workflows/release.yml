@@ -1,0 +1,287 @@
+name: Release
+
+# Native release builds.
+#
+# A tag push (v*) builds the platform packages, waits for the CI gate and
+# publishes a GitHub release. workflow_dispatch builds the same packages
+# without publishing unless the `publish` input is set.
+#
+# The packages are UNSIGNED: no Authenticode certificate and no Apple
+# Developer ID identity are available in this repository. The release notes
+# state that explicitly. Signing and notarization are tracked separately
+# (PLAN.md section 14, card T45).
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build (for example v0.1.0-alpha.1). Must already exist."
+        required: true
+        type: string
+      publish:
+        description: "Publish a GitHub release for the tag after a successful build"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "24.11.1"
+  CARGO_TERM_COLOR: always
+
+jobs:
+  metadata:
+    name: Resolve and validate the release version
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+      commit: ${{ steps.version.outputs.commit }}
+    steps:
+      - name: Check out the requested ref
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      # Strict mode also requires the three committed Cargo.lock files and
+      # checks the app, core and engine manifests plus the About view.
+      - name: Verify that every version field agrees
+        run: node scripts/verify-versions.mjs --strict
+      - name: Resolve the version and the release type
+        id: version
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          tag="v${version}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          if [[ "${version}" == *-* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+            echo "Version ${version} carries a prerelease identifier: the release is marked as a prerelease."
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            if [[ "${GITHUB_REF_NAME}" != "${tag}" ]]; then
+              echo "::error::Tag ${GITHUB_REF_NAME} does not match package.json version ${version} (expected ${tag})."
+              exit 1
+            fi
+          fi
+
+  quality:
+    name: Quality gate
+    # The same checks as the pull request pipeline: format, lint, typecheck,
+    # unit tests, native build, Rust checks and the accessibility smoke test.
+    # Nothing is published unless this job passes.
+    uses: ./.github/workflows/ci.yml
+    with:
+      run_accessibility: true
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: [metadata, quality]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x64
+            os: ubuntu-24.04
+            triple: x86_64-unknown-linux-gnu
+            bundles: deb,appimage
+          - target: windows-x64
+            os: windows-2025
+            triple: x86_64-pc-windows-msvc
+            bundles: nsis
+          - target: macos-arm64
+            os: macos-15
+            triple: aarch64-apple-darwin
+            bundles: dmg,app
+          - target: macos-x64
+            os: macos-15-intel
+            triple: x86_64-apple-darwin
+            bundles: dmg,app
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Install the Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libxdo-dev \
+            file
+      - name: Install the pinned Rust toolchain
+        run: |
+          rustup show
+          rustc --version
+          cargo --version
+      - name: Install JavaScript dependencies
+        run: npm ci
+      # --locked keeps the build on the committed lockfiles; a lock file that
+      # would need an update fails the build instead of silently changing.
+      - name: Build the native packages
+        run: npm run tauri -- build --target ${{ matrix.triple }} --bundles ${{ matrix.bundles }} -- --locked
+      - name: Collect and validate the packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/release/collect-artifacts.mjs \
+            --target "${{ matrix.target }}" \
+            --bundle-dir "src-tauri/target/${{ matrix.triple }}/release/bundle" \
+            --stage "release/${{ matrix.target }}" \
+            --version "${{ needs.metadata.outputs.version }}" \
+            --tag "${{ needs.metadata.outputs.tag }}" \
+            --commit "${{ needs.metadata.outputs.commit }}" \
+            --runner-os "${{ matrix.os }}"
+      - name: Generate the third-party notices
+        run: node scripts/generate-third-party-notices.mjs --out "release/${{ matrix.target }}/THIRD_PARTY_NOTICES.md"
+      - name: Compute the checksums for this target
+        run: node scripts/release/checksums.mjs generate --dir "release/${{ matrix.target }}"
+      - name: Upload the packages
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-${{ matrix.target }}
+          path: release/${{ matrix.target }}/
+          retention-days: 30
+          if-no-files-found: error
+
+  publish:
+    name: Publish the release
+    needs: [metadata, quality, build]
+    runs-on: ubuntu-24.04
+    # Only a tag push (or an explicit dispatch with publish=true) creates a release.
+    if: github.ref_type == 'tag' || inputs.publish
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Download the built packages
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: release-*
+          path: release/
+          merge-multiple: false
+      - name: Verify the checksums of every target
+        shell: bash
+        run: |
+          set -euo pipefail
+          for dir in release/release-*; do
+            target="$(basename "${dir}" | sed 's/^release-//')"
+            echo "verifying ${dir}"
+            node scripts/release/checksums.mjs verify --dir "${dir}" --manifest SHA256SUMS --strict
+          done
+      - name: Assemble the release directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf dist-release
+          mkdir -p dist-release
+          for dir in release/release-*; do
+            target="$(basename "${dir}" | sed 's/^release-//')"
+            for file in "${dir}"/*; do
+              name="$(basename "${file}")"
+              case "${name}" in
+                SHA256SUMS) continue ;;
+                THIRD_PARTY_NOTICES.md) continue ;;
+                build-metadata.json)
+                  cp "${file}" "dist-release/build-metadata-${target}.json"
+                  continue ;;
+                *)
+                  cp "${file}" "dist-release/${name}"
+                  ;;
+              esac
+            done
+          done
+          # The notices are copied before the checksums are computed, so the
+          # manifest covers every published file.
+          first="$(ls release | grep '^release-' | head -n 1)"
+          cp "release/${first}/THIRD_PARTY_NOTICES.md" "dist-release/THIRD_PARTY_NOTICES.md"
+          cp LICENSE "dist-release/LICENSE"
+          ls -la dist-release
+      - name: Compute the combined checksums
+        run: node scripts/release/checksums.mjs generate --dir dist-release
+      - name: Verify the assembled release directory
+        run: node scripts/release/verify-release.mjs --dir dist-release
+      - name: Create the GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.metadata.outputs.tag }}
+          VERSION: ${{ needs.metadata.outputs.version }}
+          PRERELEASE: ${{ needs.metadata.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            echo "::error::The release ${TAG} already exists. Published assets are immutable; publish a new version instead of replacing them."
+            exit 1
+          fi
+          {
+            echo "Deepwork Clock ${VERSION}"
+            echo
+            echo "Alpha release of the desktop focus timer. See CHANGELOG.md for the full list of changes."
+            echo
+            echo "### Verification status of this release"
+            echo
+            echo "- The packages are **unsigned**: no Windows Authenticode signature and no Apple Developer ID signature or notarization."
+            echo "- The packages were built on GitHub hosted runners and have **not** been installed and exercised by hand on physical hardware."
+            echo "- The screen-reader matrix (NVDA, Narrator, VoiceOver, Orca) has **not** been completed for this release."
+            echo "- The resource budgets in PLAN.md section 12 are targets, not measured results for this build."
+            echo
+            echo "### Assets"
+            echo
+            echo "- Platform packages for Linux x86_64, Windows x86_64, macOS arm64 and macOS x86_64."
+            echo "- \`SHA256SUMS\`, covering every published file."
+            echo "- \`build-metadata-*.json\`, with the toolchain and the verified architecture of every target."
+            echo "- \`THIRD_PARTY_NOTICES.md\`, with the licence texts of the bundled dependencies."
+            echo
+            echo "Verify a download with:"
+            echo
+            echo '```'
+            echo "sha256sum --check SHA256SUMS"
+            echo '```'
+          } > release-notes.md
+          args=(--title "Deepwork Clock ${VERSION}" --notes-file release-notes.md)
+          if [[ "${PRERELEASE}" == "true" ]]; then
+            args+=(--prerelease)
+          fi
+          gh release create "${TAG}" "${args[@]}" dist-release/*
+      - name: Upload the release directory to the workflow run
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-bundle
+          path: dist-release/
+          retention-days: 30
+          if-no-files-found: warn
