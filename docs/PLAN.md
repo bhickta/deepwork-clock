@@ -176,12 +176,14 @@ Bridge commands, deliberately small:
 - `get_settings() -> Settings`
 - `save_settings({expectedSettingsRevision, settings}) -> Settings`
 - `get_capabilities() -> Capabilities`
+- `get_warnings() -> AppError[]` and `timer:error` events retain startup/storage failures until the frontend can display them.
+- `get_recovery() -> {savedAt, ageMs, phaseId, remainingMs} | null` supplies checkpoint age without adding wall-clock fields to the timer snapshot.
 - `window_action({action}) -> Result` (compact, normal, pin, restore; allowlisted)
 - `list_history({limit, before?}) -> HistoryPage`
 - `export_history({format}) -> ExportResult` (backend-owned save dialog)
 - `delete_history({confirmation}) -> Result`
 
-`timer:snapshot` emits on transitions and at most once per displayed second while a view is visible. UI can extrapolate visually between snapshots but cannot complete a session. Snapshot revisions are monotonically increasing, including published ticks; reject stale actions with `STALE_REVISION` and return latest snapshot. Client must refresh and let the user retry destructive actions, never blindly retry them.
+`timer:snapshot` emits on transitions and at most once per displayed second while a view is visible. UI can extrapolate visually between snapshots but cannot complete a session. Snapshot revisions are monotonically increasing, including published ticks. Reject actions older than the last command or completion boundary with `STALE_REVISION` and return the latest snapshot; tolerate missed display-only ticks so a one-second refresh cannot make every click stale. Client must refresh and let the user retry destructive actions, never blindly retry them.
 
 Subscribe before requesting initial snapshot; ignore older revisions. Backend checks expiry immediately before every command. Capabilities have state `available | unavailable | permission_required | unknown`, reason, optional effective value. A request being accepted is different from a capability being observed working.
 
@@ -217,7 +219,7 @@ docs/evidence/               # actual measured evidence, not invented results
 .github/workflows/{ci,release}.yml
 ```
 
-Engine is independent of Tauri; it takes samples supplied by the service. Use small enums and ordinary structs, constructor injection and owned values. Avoid advanced lifetime tricks, global mutable state, premature generics and panics in normal error paths. A mutex is acceptable around a short state transition; never hold it across filesystem, notifications, UI scheduling or awaits. Preserve effect order with a single service owner/queue. UI work occurs on Tauri's required thread.
+Engine is independent of Tauri; it takes samples supplied by the service. The implementation makes `src-tauri/src/engine` and `src-tauri/src/core` independent path crates: core contains settings, storage, history, recovery and pure service logic. Both can be tested without GTK. Use small enums and ordinary structs, constructor injection and owned values. Avoid advanced lifetime tricks, global mutable state, premature generics and panics in normal error paths. Keep the state mutex short and release it before filesystem, notifications, UI scheduling or awaits. A separate operation gate serializes each transition and its ordered effects; platform callbacks dispatch work without blocking Tauri's main thread. UI work occurs on Tauri's required thread.
 
 Prefer stdlib plus serde/serde_json, Tauri and required official plugins. Add a crate only for a concrete requirement. Use strict TS, no `any` at the bridge, no remote CDN, no arbitrary HTML injection. Native OS code is isolated and commented with its safety assumptions.
 
@@ -225,7 +227,7 @@ Prefer stdlib plus serde/serde_json, Tauri and required official plugins. Add a 
 
 The timer is the primary object. Default view: phase name, large tabular digits, optional label, text-labelled Start/Pause/Resume, secondary Reset and Next, quiet settings/help controls. Do not add dashboards to the active timer.
 
-Proposed normal window 420x440 logical pixels, compact 300x160, settings 560x640. These are starting design values, not hard accessibility limits. Reflow or scroll when text scaling requires it. Compact mode reuses the same window initially to avoid a second WebView and state owner. Expanding returns to normal dimensions without pausing.
+Normal window starts at 420x440 logical pixels, compact at 320x200 after layout testing, settings around 560x640. The original 300x160 compact experiment required smaller controls; the larger default preserves 44px targets. These are starting design values, not hard accessibility limits. Reflow or scroll when text scaling requires it. Compact mode reuses the same window initially to avoid a second WebView and state owner. Expanding returns to normal dimensions without pausing.
 
 Use an 8px spacing scale (4px for fine adjustments), 12px card radius, system font stack, tabular digits, restrained elevation. Body 16px, supporting text at least 14px, timer 64px normal / 42px compact, adjustable scale 100–200%. Check actual glyph widths at 24 hours and with localized strings.
 
