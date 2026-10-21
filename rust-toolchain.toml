@@ -1,0 +1,11 @@
+# Pinned Rust toolchain for reproducible builds (rustup honours this file).
+#
+# The release matrix builds on native hosted runners; every job installs this
+# exact toolchain. Do not change the channel without updating:
+#   - package.json engines / CI node version
+#   - docs/evidence/toolchain.md
+#   - .github/workflows/*.yml (if a rustup override is added)
+[toolchain]
+channel = "1.95.0"
+profile = "minimal"
+components = ["clippy", "rustfmt"]

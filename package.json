@@ -1,0 +1,65 @@
+{
+  "name": "deepwork-clock",
+  "version": "0.1.0-alpha.1",
+  "private": true,
+  "type": "module",
+  "description": "Deepwork Clock - an offline, keyboard-first desktop focus timer built with Tauri 2, Rust and vanilla TypeScript.",
+  "license": "MIT",
+  "author": "Deepwork Clock contributors",
+  "homepage": "https://github.com/bhickta/deepwork-clock#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bhickta/deepwork-clock.git"
+  },
+  "bugs": {
+    "url": "https://github.com/bhickta/deepwork-clock/issues"
+  },
+  "keywords": [
+    "tauri",
+    "rust",
+    "timer",
+    "pomodoro",
+    "focus",
+    "accessibility",
+    "offline"
+  ],
+  "packageManager": "npm@11.6.2",
+  "engines": {
+    "node": ">=24.11.1"
+  },
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 1420 --strictPort",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 1420 --strictPort",
+    "dev:e2e": "vite --host 127.0.0.1 --port 1423 --strictPort",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:scripts": "node --test \"scripts/**/*.test.mjs\"",
+    "test:a11y": "playwright test --config scripts/e2e/playwright.config.ts",
+    "tauri": "tauri",
+    "verify:versions": "node scripts/verify-versions.mjs",
+    "verify:icons": "node scripts/verify-icons.mjs",
+    "icons:generate": "node scripts/icons/generate-icons.mjs",
+    "notices": "node scripts/generate-third-party-notices.mjs"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2.12.4"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
+    "@eslint/js": "10.0.1",
+    "@playwright/test": "1.64.1",
+    "@tauri-apps/cli": "2.12.4",
+    "@types/node": "24.19.2",
+    "eslint": "10.13.0",
+    "globals": "17.13.0",
+    "jsdom": "29.1.1",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.0",
+    "vite": "8.3.5",
+    "vitest": "5.0.5"
+  }
+}

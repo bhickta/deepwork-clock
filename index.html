@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <meta
+      name="description"
+      content="Deepwork Clock is a calm desktop timer for focused work, with focus cycles, a local history and keyboard control."
+    />
+    <title>Deepwork Clock</title>
+    <link rel="stylesheet" href="/src/styles/tokens.css" />
+    <link rel="stylesheet" href="/src/styles/base.css" />
+    <link rel="stylesheet" href="/src/styles/app.css" />
+  </head>
+  <body>
+    <div id="app" class="app-shell" hidden></div>
+    <noscript>
+      <p style="padding: 1rem">
+        Deepwork Clock needs JavaScript to show the timer. The timer itself runs in the desktop app.
+      </p>
+    </noscript>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

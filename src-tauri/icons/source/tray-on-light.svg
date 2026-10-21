@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Deepwork Clock tray glyph for light menu bars / taskbars (dark ink, transparent
+  background). Original artwork, MIT licensed with the repository.
+
+  Source of truth for src-tauri/icons/tray/deepwork-clock-tray-on-light.png.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Deepwork Clock tray glyph">
+  <title>Deepwork Clock tray glyph (light backgrounds)</title>
+  <circle cx="256" cy="256" r="190" fill="none" stroke="#101B36" stroke-width="80"/>
+  <path d="M 236 276 L 236 196 Q 236 176 256 168 Q 276 176 276 196 L 276 276 Z" fill="#101B36"/>
+  <path d="M 256 236 L 322 236 Q 338 236 342 256 Q 338 276 322 276 L 256 276 Z" fill="#101B36"/>
+  <circle cx="256" cy="256" r="40" fill="#B45309"/>
+</svg>

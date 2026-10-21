@@ -1,0 +1,216 @@
+// @vitest-environment jsdom
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import { SettingsView, isShortcutPattern } from "../../src/settings-view";
+import type { Settings, Theme } from "../../src/contract";
+import { makeSettings } from "./helpers/fake-bridge";
+
+interface Harness {
+  view: SettingsView;
+  saved: Settings[];
+  saveError: string | null;
+  previewed: Array<{ theme: Theme; textScale: number }>;
+}
+
+function build(capabilities: SettingsViewCapabilities = {}): Harness {
+  const harness: Harness = {
+    view: null as unknown as SettingsView,
+    saved: [],
+    saveError: null,
+    previewed: []
+  };
+  harness.view = new SettingsView(document, {
+    capabilities,
+    onSave: async (draft) => {
+      if (harness.saveError) {
+        return harness.saveError;
+      }
+      harness.saved.push(draft);
+      return null;
+    },
+    onCancel: () => undefined,
+    onPreview: (theme, textScale) => {
+      harness.previewed.push({ theme, textScale });
+    },
+    announce: () => undefined
+  });
+  return harness;
+}
+
+type SettingsViewCapabilities = Parameters<typeof SettingsView.prototype.updateCapabilities>[0];
+
+function field<T extends HTMLElement>(selector: string): T {
+  const found = document.querySelector<T>(selector);
+  if (!found) {
+    throw new Error(`missing field ${selector}`);
+  }
+  return found;
+}
+
+beforeEach(() => {
+  document.body.textContent = "";
+});
+
+describe("SettingsView", () => {
+  it("fills the form from the settings and previews the theme", () => {
+    const harness = build();
+    harness.view.open(makeSettings({ theme: "dark", textScale: 1.5 }));
+
+    expect(field<HTMLInputElement>("#focus-hours").value).toBe("0");
+    expect(field<HTMLInputElement>("#focus-minutes").value).toBe("50");
+    expect(field<HTMLInputElement>("#interval").value).toBe("4");
+    expect(field<HTMLSelectElement>("#theme").value).toBe("dark");
+
+    field<HTMLSelectElement>("#theme").value = "light";
+    field<HTMLSelectElement>("#theme").dispatchEvent(new Event("change", { bubbles: true }));
+    expect(harness.previewed.at(-1)?.theme).toBe("light");
+
+    field<HTMLInputElement>("#text-scale").value = "1.5";
+    field<HTMLInputElement>("#text-scale").dispatchEvent(new Event("input", { bubbles: true }));
+    expect(harness.previewed.at(-1)?.textScale).toBe(1.5);
+  });
+
+  it("keeps the typed values when the dialog is reopened", () => {
+    const harness = build();
+    harness.view.open(makeSettings());
+    const label = field<HTMLInputElement>("#label");
+    label.value = "Deep work";
+    label.dispatchEvent(new Event("input", { bubbles: true }));
+
+    harness.view.open(makeSettings({ revision: 9 }));
+    expect(field<HTMLInputElement>("#label").value).toBe("Deep work");
+  });
+
+  it("refuses a duration outside the accepted bounds and keeps the value", async () => {
+    const harness = build();
+    harness.view.open(makeSettings());
+
+    const hours = field<HTMLInputElement>("#focus-hours");
+    hours.value = "99";
+    hours.dispatchEvent(new Event("input", { bubbles: true }));
+
+    field<HTMLFormElement>(".settings-form").dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true })
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(harness.saved).toHaveLength(0);
+    expect(field<HTMLElement>("#focus-error").hasAttribute("hidden")).toBe(false);
+    expect(field<HTMLElement>("#focus-error").textContent?.length).toBeGreaterThan(0);
+    expect(hours.getAttribute("aria-invalid")).toBe("true");
+    expect(hours.value).toBe("99");
+  });
+
+  it("saves a valid draft", async () => {
+    const harness = build();
+    harness.view.open(makeSettings());
+    field<HTMLInputElement>("#focus-minutes").value = "25";
+    field<HTMLInputElement>("#focus-minutes").dispatchEvent(new Event("input", { bubbles: true }));
+
+    field<HTMLFormElement>(".settings-form").dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true })
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(harness.saved).toHaveLength(1);
+    expect(harness.saved[0]?.config.focusMs).toBe(25 * 60_000);
+    expect(harness.saved[0]?.revision).toBe(3);
+  });
+
+  it("saves when the save button in the footer is pressed", async () => {
+    const harness = build();
+    harness.view.open(makeSettings());
+
+    const save = document.querySelector<HTMLButtonElement>(".modal__footer .button--primary");
+    expect(save).not.toBeNull();
+    save?.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(harness.saved).toHaveLength(1);
+    expect(harness.saved[0]?.config.focusMs).toBe(50 * 60_000);
+  });
+
+  it("shows the save failure and keeps the edits", async () => {
+    const harness = build();
+    harness.saveError = "the disk is read only";
+    harness.view.open(makeSettings());
+
+    const label = field<HTMLInputElement>("#label");
+    label.value = "Deep work";
+    label.dispatchEvent(new Event("input", { bubbles: true }));
+
+    field<HTMLFormElement>(".settings-form").dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true })
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(field<HTMLElement>(".settings__error").textContent).toContain("the disk is read only");
+    expect(field<HTMLInputElement>("#label").value).toBe("Deep work");
+  });
+
+  it("disables an option the desktop cannot support and explains why", () => {
+    const harness = build({
+      notifications: { state: "unavailable", reason: "There is no notification service." }
+    });
+    harness.view.open(makeSettings());
+
+    const toggle = field<HTMLInputElement>("#notifications");
+    expect(toggle.disabled).toBe(true);
+    expect(toggle.getAttribute("aria-disabled")).toBe("true");
+    expect(field<HTMLElement>("#notifications-note").textContent).toContain(
+      "There is no notification service."
+    );
+  });
+
+  it("keeps an option usable when the support is only unknown", () => {
+    const harness = build({ sound: { state: "unknown", reason: "Not reported." } });
+    harness.view.open(makeSettings());
+
+    expect(field<HTMLInputElement>("#sound").disabled).toBe(false);
+    expect(field<HTMLElement>("#sound-note").textContent).toContain("could not be verified");
+  });
+
+  it("asks before the unsaved edits are thrown away", async () => {
+    const harness = build();
+    harness.view.open(makeSettings());
+    field<HTMLInputElement>("#label").value = "Deep work";
+    field<HTMLInputElement>("#label").dispatchEvent(new Event("input", { bubbles: true }));
+
+    const closing = harness.view.close();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(harness.view.isDirty).toBe(true);
+    const modals = document.querySelectorAll(".modal");
+    expect(modals).toHaveLength(2);
+
+    const guardButtons = modals[1]?.querySelectorAll<HTMLButtonElement>(".modal__footer button");
+    guardButtons?.[1]?.click();
+    await closing;
+    expect(harness.view.isDirty).toBe(false);
+  });
+});
+
+describe("isShortcutPattern", () => {
+  it("accepts a modifier combination and rejects a bare key", () => {
+    expect(isShortcutPattern("CommandOrControl+Alt+Shift+Space")).toBe(true);
+    expect(isShortcutPattern("Ctrl+K")).toBe(true);
+    expect(isShortcutPattern("S")).toBe(false);
+    expect(isShortcutPattern("")).toBe(false);
+    expect(isShortcutPattern("Ctrl+")).toBe(false);
+  });
+});
+
+describe("announce helper", () => {
+  it("does not throw when a view is used without a live region", () => {
+    const announce = vi.fn();
+    const view = new SettingsView(document, {
+      capabilities: {},
+      onSave: async () => null,
+      onCancel: () => undefined,
+      onPreview: () => undefined,
+      announce
+    });
+    expect(view.isOpen).toBe(false);
+    expect(announce).not.toHaveBeenCalled();
+  });
+});

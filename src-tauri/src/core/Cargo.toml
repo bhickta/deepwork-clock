@@ -1,0 +1,21 @@
+[package]
+name = "deepwork-core"
+version = "0.1.0-alpha.1"
+edition = "2021"
+rust-version = "1.95"
+description = "Desktop-free logic for Deepwork Clock: settings, history, recovery, durable storage and the timer service"
+license = "MIT"
+publish = false
+
+[lib]
+name = "deepwork_core"
+path = "src/lib.rs"
+
+[dependencies]
+deepwork-engine = { path = "../engine" }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
+
+[dev-dependencies]
+tempfile = "3.27.0"

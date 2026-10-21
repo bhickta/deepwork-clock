@@ -1,0 +1,161 @@
+/*
+ * Design tokens.
+ *
+ * Every colour is defined for the light, dark and high contrast palettes.
+ * The palettes are checked against the contrast targets in the plan:
+ * body text at least 4.5:1, large text and control boundaries at least 3:1.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    "Noto Sans", sans-serif;
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-7: 1.75rem;
+  --space-8: 2rem;
+
+  --radius-sm: 0.375rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-pill: 999px;
+
+  --text-scale: 1;
+  --timer-size: 4rem;
+  --timer-size-compact: 2.625rem;
+  --control-size: 2.75rem;
+
+  --focus-width: 3px;
+  --duration-fast: 120ms;
+  --duration-medium: 200ms;
+  --ease: cubic-bezier(0.2, 0, 0.2, 1);
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+
+  --canvas: #f7f4ef;
+  --canvas-subtle: #f1ece3;
+  --surface: #fffdfa;
+  --surface-elevated: #ffffff;
+
+  --text: #23262f;
+  --text-muted: #5c6070;
+
+  --accent: #4f46e5;
+  --accent-strong: #4338ca;
+  --accent-soft: #eceafb;
+  --on-accent: #ffffff;
+
+  --teal: #0f766e;
+  --teal-soft: #dff3f1;
+
+  --border: #e3ddd1;
+  --border-strong: #8b8375;
+
+  --focus-ring: #4338ca;
+
+  --success: #15803d;
+  --success-soft: #dcf3e4;
+  --warning: #b45309;
+  --warning-soft: #fbeeda;
+  --danger: #b91c1c;
+  --danger-soft: #fbe6e6;
+
+  --shadow-sm: 0 1px 2px rgba(35, 38, 47, 0.06), 0 1px 3px rgba(35, 38, 47, 0.08);
+  --shadow-md: 0 10px 30px rgba(35, 38, 47, 0.12);
+  --shadow-focus: 0 0 0 3px rgba(67, 56, 202, 0.25);
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --canvas: #12151c;
+  --canvas-subtle: #171b24;
+  --surface: #1b2029;
+  --surface-elevated: #232936;
+
+  --text: #eef1f7;
+  --text-muted: #a7b0c2;
+
+  --accent: #8b8cf7;
+  --accent-strong: #a5a6fb;
+  --accent-soft: #262a44;
+  --on-accent: #14161d;
+
+  --teal: #5eead4;
+  --teal-soft: #11312f;
+
+  --border: #2c3341;
+  --border-strong: #6f7889;
+
+  --focus-ring: #a5a6fb;
+
+  --success: #4ade80;
+  --success-soft: #14301f;
+  --warning: #fbbf24;
+  --warning-soft: #33270c;
+  --danger: #f87171;
+  --danger-soft: #3a1a1a;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --shadow-md: 0 10px 30px rgba(0, 0, 0, 0.5);
+  --shadow-focus: 0 0 0 3px rgba(165, 166, 251, 0.35);
+}
+
+[data-theme="high-contrast"] {
+  color-scheme: dark;
+
+  --canvas: #000000;
+  --canvas-subtle: #000000;
+  --surface: #000000;
+  --surface-elevated: #000000;
+
+  --text: #ffffff;
+  --text-muted: #f0f0f0;
+
+  --accent: #ffff00;
+  --accent-strong: #ffff00;
+  --accent-soft: #1c1c00;
+  --on-accent: #000000;
+
+  --teal: #00ffff;
+  --teal-soft: #002020;
+
+  --border: #ffffff;
+  --border-strong: #ffffff;
+
+  --focus-ring: #00ffff;
+
+  --success: #00ff66;
+  --success-soft: #002200;
+  --warning: #ffff00;
+  --warning-soft: #1c1c00;
+  --danger: #ff6666;
+  --danger-soft: #220000;
+
+  --shadow-sm: none;
+  --shadow-md: none;
+  --shadow-focus: 0 0 0 3px #00ffff;
+}
+
+@media (forced-colors: active) {
+  :root {
+    --border: CanvasText;
+    --border-strong: CanvasText;
+    --focus-ring: Highlight;
+    --shadow-sm: none;
+    --shadow-md: none;
+  }
+
+  .phase-badge__dot,
+  .brand-mark {
+    forced-color-adjust: none;
+  }
+}

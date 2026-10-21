@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Deepwork Clock application mark (original artwork, created for this project).
+
+  Design: a clock face drawn as a bold ring on a deep navy rounded square, with
+  white hands fixed at 12 and 3 and an amber quarter of the ring marking the
+  elapsed focus session. The mark is geometric on purpose so that it stays
+  readable at 16 px in a taskbar or tray.
+
+  This file is the source of truth for every generated native icon in
+  src-tauri/icons/. Regenerate with: npm run icons:generate
+  License: MIT (same as the repository). No third-party artwork is used.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="Deepwork Clock">
+  <title>Deepwork Clock</title>
+  <desc>Deep navy rounded square holding a white clock ring with amber progress quarter and white hands.</desc>
+
+  <!-- Background plate -->
+  <rect x="0" y="0" width="1024" height="1024" rx="228" ry="228" fill="#101B36"/>
+
+  <!-- Clock ring: full circle minus the amber progress quarter -->
+  <circle cx="512" cy="512" r="248" fill="none" stroke="#FFFFFF" stroke-width="104"/>
+  <path d="M 512 760 A 248 248 0 0 1 264 512" fill="none" stroke="#FFB020" stroke-width="104" stroke-linecap="butt"/>
+
+  <!-- Minute hand, pointing at 12 -->
+  <path d="M 468 540 L 468 386 Q 468 350 512 334 Q 556 350 556 386 L 556 540 Z" fill="#FFFFFF"/>
+  <!-- Hour hand, pointing at 3 -->
+  <path d="M 512 468 L 623 468 Q 649 468 657 512 Q 649 556 623 556 L 512 556 Z" fill="#FFFFFF"/>
+  <!-- Centre hub -->
+  <circle cx="512" cy="512" r="54" fill="#FFB020"/>
+</svg>
