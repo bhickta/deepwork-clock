@@ -500,8 +500,10 @@ impl Engine {
 
     /// Returns the break phase that follows `count` completed focus phases.
     fn break_phase_for_count(&self, count: u32) -> Phase {
+        // The interval is validated to be at least one, so the divisibility
+        // test is the same as the former remainder comparison.
         let interval = self.config.long_break_interval.max(1);
-        if count > 0 && count % interval == 0 {
+        if count > 0 && count.is_multiple_of(interval) {
             Phase::LongBreak
         } else {
             Phase::ShortBreak

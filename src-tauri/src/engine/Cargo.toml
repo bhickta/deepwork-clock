@@ -6,7 +6,7 @@
 name = "deepwork-engine"
 version = "0.1.0-alpha.1"
 edition = "2021"
-rust-version = "1.74"
+rust-version = "1.95"
 description = "Deterministic, platform-free countdown and focus-cycle engine for Deepwork Clock"
 license = "MIT"
 publish = false

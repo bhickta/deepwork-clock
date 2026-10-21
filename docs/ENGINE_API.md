@@ -15,7 +15,7 @@ Owner: engine worker. Owned paths: `src-tauri/src/engine/**` only.
 | Package name | `deepwork-engine` |
 | Crate (import) name | `deepwork_engine` |
 | Version | `0.1.0-alpha.1` |
-| Edition | 2021 (`rust-version = 1.74`) |
+| Edition | 2021 (`rust-version = 1.95`, matching the pinned application toolchain and dependency baseline) |
 | `[lib]` | `name = "deepwork_engine"`, `path = "mod.rs"` |
 | Dependencies | `serde` (derive), `serde_json`, `uuid` (`v4`, `serde`) — nothing else |
 | Build | `#![forbid(unsafe_code)]`, `#![deny(missing_docs)]`, no `unsafe`, no I/O, no clock reads |

@@ -12,7 +12,7 @@ fn four_completed_focus_phases_select_the_long_break() {
         // A completed focus phase always earns a break.
         elapsed = complete_focus_phase(&mut engine, elapsed);
         assert_eq!(engine.snapshot().completed_focus_count, expected_count);
-        let expected_break = if expected_count % 4 == 0 {
+        let expected_break = if expected_count.is_multiple_of(4) {
             Phase::LongBreak
         } else {
             Phase::ShortBreak
