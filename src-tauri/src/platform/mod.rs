@@ -8,6 +8,7 @@ pub mod capabilities;
 pub mod clock;
 pub mod host;
 pub mod notification;
+pub mod placement;
 pub mod shortcut;
 pub mod tray;
 pub mod window;

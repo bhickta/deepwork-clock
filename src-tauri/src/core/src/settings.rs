@@ -5,6 +5,8 @@
 //! the revision counter; a client may only submit a settings document together
 //! with the revision it believes to be current.
 
+use std::collections::BTreeMap;
+
 use deepwork_engine::Config;
 use serde::{Deserialize, Serialize};
 
@@ -40,6 +42,21 @@ pub const MAX_LONG_BREAK_INTERVAL: u32 = deepwork_engine::MAX_LONG_BREAK_INTERVA
 /// in; the string uses the platform-neutral modifier names understood by the
 /// global shortcut plugin.
 pub const DEFAULT_GLOBAL_SHORTCUT: &str = "Alt+Shift+Space";
+
+/// Highest accepted completion sound volume (percent).
+pub const MAX_SOUND_VOLUME: u8 = 100;
+
+/// Volume of a completion sound when the user has not changed it.
+pub const DEFAULT_SOUND_VOLUME: u8 = 60;
+
+/// Hard upper bound on the number of local shortcut bindings.
+pub const MAX_LOCAL_SHORTCUTS: usize = 32;
+
+/// Longest accepted local shortcut action name.
+pub const MAX_LOCAL_SHORTCUT_KEY_CHARS: usize = 32;
+
+/// Longest accepted local shortcut accelerator.
+pub const MAX_LOCAL_SHORTCUT_VALUE_CHARS: usize = 64;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -78,6 +95,14 @@ pub struct Settings {
     pub close_to_tray: bool,
     pub history_enabled: bool,
     pub retention_days: u32,
+    /// Moves to the next phase automatically after a phase completes while the
+    /// application is awake. Off by default, because an automatic cycle has to
+    /// be an explicit decision.
+    pub auto_advance: bool,
+    /// Volume of the optional completion sound, in percent.
+    pub sound_volume: u8,
+    /// Local keyboard bindings, keyed by a short action name.
+    pub local_shortcuts: BTreeMap<String, String>,
 }
 
 impl Default for Settings {
@@ -96,6 +121,9 @@ impl Default for Settings {
             close_to_tray: false,
             history_enabled: true,
             retention_days: 90,
+            auto_advance: false,
+            sound_volume: DEFAULT_SOUND_VOLUME,
+            local_shortcuts: BTreeMap::new(),
         }
     }
 }
@@ -135,6 +163,12 @@ impl Settings {
                 "Global shortcut cannot be enabled without an accelerator.",
             ));
         }
+        if self.sound_volume > MAX_SOUND_VOLUME {
+            return Err(BridgeError::invalid_state(format!(
+                "Sound volume must be between 0 and {MAX_SOUND_VOLUME}."
+            )));
+        }
+        validate_local_shortcuts(&self.local_shortcuts)?;
         validate_config(&self.config)
     }
 
@@ -142,6 +176,43 @@ impl Settings {
     pub fn next_revision(&self) -> u64 {
         self.revision.saturating_add(1)
     }
+}
+
+/// Validates the local shortcut map.
+///
+/// The map is deliberately boring: a small, bounded set of action names that
+/// only use lower-case ASCII letters, digits and `-`, and a non-empty
+/// accelerator string. The backend does not interpret the accelerator here;
+/// that is the job of the shortcut layer. Rejecting unknown keys would make
+/// forward compatibility worse, so only the shape is enforced.
+pub fn validate_local_shortcuts(shortcuts: &BTreeMap<String, String>) -> Result<(), BridgeError> {
+    if shortcuts.len() > MAX_LOCAL_SHORTCUTS {
+        return Err(BridgeError::invalid_state(format!(
+            "At most {MAX_LOCAL_SHORTCUTS} local shortcuts can be stored."
+        )));
+    }
+    for (key, value) in shortcuts {
+        let key_length = key.chars().count();
+        if key_length == 0 || key_length > MAX_LOCAL_SHORTCUT_KEY_CHARS {
+            return Err(BridgeError::invalid_state(format!(
+                "A local shortcut name must be between 1 and {MAX_LOCAL_SHORTCUT_KEY_CHARS} characters."
+            )));
+        }
+        if !key.chars().all(|character| {
+            character.is_ascii_lowercase() || character.is_ascii_digit() || character == '-'
+        }) {
+            return Err(BridgeError::invalid_state(
+                "A local shortcut name may only contain lower-case letters, digits and '-'.",
+            ));
+        }
+        let value_length = value.chars().count();
+        if value_length == 0 || value_length > MAX_LOCAL_SHORTCUT_VALUE_CHARS {
+            return Err(BridgeError::invalid_state(format!(
+                "A local shortcut must be between 1 and {MAX_LOCAL_SHORTCUT_VALUE_CHARS} characters."
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// Validates a timer configuration document.
@@ -178,9 +249,141 @@ mod tests {
             "\"closeToTray\"",
             "\"historyEnabled\"",
             "\"retentionDays\"",
+            "\"autoAdvance\"",
+            "\"soundVolume\"",
+            "\"localShortcuts\"",
         ] {
             assert!(json.contains(expected), "missing {expected} in {json}");
         }
+    }
+
+    #[test]
+    fn new_features_have_calm_defaults() {
+        let settings = Settings::default();
+        assert!(!settings.auto_advance, "auto-advance is opt-in");
+        assert_eq!(settings.sound_volume, DEFAULT_SOUND_VOLUME);
+        assert!(settings.local_shortcuts.is_empty());
+    }
+
+    #[test]
+    fn old_documents_without_the_new_fields_still_load() {
+        // A settings document written before auto-advance, sound volume and
+        // local shortcuts existed.
+        let json = r#"{
+            "schemaVersion": 1,
+            "revision": 7,
+            "theme": "dark",
+            "textScale": 1.25,
+            "config": {
+                "mode": "cycle",
+                "focusMs": 3000000,
+                "shortBreakMs": 600000,
+                "longBreakMs": 1800000,
+                "longBreakInterval": 4,
+                "label": ""
+            },
+            "notifications": true,
+            "sound": false,
+            "globalShortcutEnabled": false,
+            "globalShortcut": "Alt+Shift+Space",
+            "launchAtLogin": false,
+            "closeToTray": false,
+            "historyEnabled": true,
+            "retentionDays": 90
+        }"#;
+        let settings: Settings = serde_json::from_str(json).expect("parse");
+        assert_eq!(settings.revision, 7);
+        assert_eq!(settings.theme, Theme::Dark);
+        assert!(!settings.auto_advance);
+        assert_eq!(settings.sound_volume, DEFAULT_SOUND_VOLUME);
+        assert!(settings.local_shortcuts.is_empty());
+        assert!(settings.validate().is_ok());
+    }
+
+    #[test]
+    fn sound_volume_bounds_are_enforced() {
+        let loudest = Settings {
+            sound_volume: MAX_SOUND_VOLUME,
+            ..Settings::default()
+        };
+        assert!(loudest.validate().is_ok());
+        let silent = Settings {
+            sound_volume: 0,
+            ..Settings::default()
+        };
+        assert!(silent.validate().is_ok());
+        let too_loud = Settings {
+            sound_volume: MAX_SOUND_VOLUME + 1,
+            ..Settings::default()
+        };
+        let error = too_loud.validate().expect_err("too loud");
+        assert_eq!(error.code, CODE_INVALID_STATE);
+    }
+
+    #[test]
+    fn local_shortcut_entries_are_bounded() {
+        let valid = Settings {
+            local_shortcuts: BTreeMap::from([
+                ("start-pause".to_string(), "Space".to_string()),
+                ("next".to_string(), "Ctrl+Shift+N".to_string()),
+                ("a1".to_string(), "F1".to_string()),
+            ]),
+            ..Settings::default()
+        };
+        assert!(valid.validate().is_ok());
+
+        let too_many = Settings {
+            local_shortcuts: (0..=MAX_LOCAL_SHORTCUTS)
+                .map(|index| (format!("action-{index}"), "Space".to_string()))
+                .collect(),
+            ..Settings::default()
+        };
+        assert_eq!(
+            too_many.validate().unwrap_err().code,
+            CODE_INVALID_STATE,
+            "the entry count is capped"
+        );
+
+        for key in ["", "Has-Caps", "with space", "under_score", "é"] {
+            let settings = Settings {
+                local_shortcuts: BTreeMap::from([(key.to_string(), "Space".to_string())]),
+                ..Settings::default()
+            };
+            assert!(
+                settings.validate().is_err(),
+                "the key {key:?} must be refused"
+            );
+        }
+
+        let too_long_key = Settings {
+            local_shortcuts: BTreeMap::from([(
+                "a".repeat(MAX_LOCAL_SHORTCUT_KEY_CHARS + 1),
+                "Space".to_string(),
+            )]),
+            ..Settings::default()
+        };
+        assert!(too_long_key.validate().is_err());
+
+        let empty_value = Settings {
+            local_shortcuts: BTreeMap::from([("start".to_string(), String::new())]),
+            ..Settings::default()
+        };
+        assert!(
+            empty_value.validate().is_err(),
+            "an empty accelerator is refused"
+        );
+
+        let too_long_value = Settings {
+            local_shortcuts: BTreeMap::from([(
+                "start".to_string(),
+                "x".repeat(MAX_LOCAL_SHORTCUT_VALUE_CHARS + 1),
+            )]),
+            ..Settings::default()
+        };
+        assert!(
+            too_long_value.validate().is_err(),
+            "an over-long accelerator is refused"
+        );
     }
 
     #[test]

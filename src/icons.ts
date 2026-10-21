@@ -18,6 +18,8 @@ type Primitive =
       y: number | string;
       width: number | string;
       height: number | string;
+      rx?: number | string;
+      ry?: number | string;
       fill?: boolean;
     };
 
@@ -62,6 +64,11 @@ const ICONS: Readonly<Record<string, readonly Primitive[]>> = {
     { kind: "path", d: "M15 4v5h5" },
     { kind: "path", d: "M15 20v-5h5" },
     { kind: "path", d: "M9 20v-5H4" }
+  ],
+  /** Two overlapping frames: the compact window that stays above others. */
+  float: [
+    { kind: "rect", x: "4", y: "4", width: "12", height: "10", rx: "2.5", ry: "2.5" },
+    { kind: "rect", x: "8", y: "10", width: "12", height: "10", rx: "2.5", ry: "2.5" }
   ],
   expand: [
     { kind: "path", d: "M4 9V4h5" },
@@ -174,7 +181,16 @@ export function createIcon(name: IconName, size = 20): SVGElement {
       node.setAttribute("y", String(primitive.y));
       node.setAttribute("width", String(primitive.width));
       node.setAttribute("height", String(primitive.height));
-      node.setAttribute("stroke", "none");
+      if (primitive.rx !== undefined) {
+        node.setAttribute("rx", String(primitive.rx));
+      }
+      if (primitive.ry !== undefined) {
+        node.setAttribute("ry", String(primitive.ry));
+      }
+      // A filled rectangle keeps the behaviour of the pause glyph; an
+      // outlined one uses the same currentColor stroke as the paths.
+      node.setAttribute("fill", primitive.fill === true ? "currentColor" : "none");
+      node.setAttribute("stroke", primitive.fill === true ? "none" : "currentColor");
     }
     svg.appendChild(node);
   }

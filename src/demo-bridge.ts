@@ -41,12 +41,15 @@ function defaultSettings(): Settings {
     config: { ...DEFAULT_CONFIG },
     notifications: false,
     sound: false,
+    soundVolume: 60,
+    autoAdvance: false,
     globalShortcutEnabled: false,
     globalShortcut: "",
     launchAtLogin: false,
     closeToTray: false,
     historyEnabled: true,
-    retentionDays: 90
+    retentionDays: 90,
+    localShortcuts: {}
   };
 }
 
@@ -89,7 +92,11 @@ function cloneConfig(config: TimerConfig): TimerConfig {
 }
 
 function cloneSettings(settings: Settings): Settings {
-  return { ...settings, config: cloneConfig(settings.config) };
+  return {
+    ...settings,
+    config: cloneConfig(settings.config),
+    localShortcuts: { ...settings.localShortcuts }
+  };
 }
 
 function cloneRecord(record: HistoryRecord): HistoryRecord {

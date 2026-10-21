@@ -9,6 +9,19 @@ import {
   parseDurationParts
 } from "./format";
 import type { Capabilities, Settings, Theme, TimerConfig } from "./contract";
+import { MAX_LOCAL_SHORTCUT_LENGTH } from "./contract";
+import {
+  chordFromEvent,
+  effectiveShortcut,
+  formatShortcut,
+  isMacPlatform,
+  isModifierOnlyKey,
+  normalizeLocalShortcuts,
+  SHORTCUTS,
+  validateShortcutChord,
+  type ShortcutIssue,
+  type ShortcutSpec
+} from "./shortcuts";
 import { t } from "./i18n";
 
 export interface SettingsViewOptions {
@@ -33,6 +46,13 @@ interface ToggleControls {
   wrapper: HTMLElement;
   input: HTMLInputElement;
   note: HTMLElement;
+}
+
+interface ShortcutRow {
+  spec: ShortcutSpec;
+  wrapper: HTMLElement;
+  input: HTMLInputElement;
+  error: HTMLElement;
 }
 
 const CAPABILITY_CONTROL_NAMES = ["notifications", "sound", "globalShortcut", "autostart", "tray"] as const;
@@ -193,6 +213,12 @@ export class SettingsView {
 
   private readonly toggles = new Map<string, ToggleControls>();
 
+  private readonly shortcutRows = new Map<string, ShortcutRow>();
+
+  private readonly isMac: boolean;
+
+  private localShortcuts: Record<string, string> = {};
+
   private base: Settings | null = null;
 
   private dirty = false;
@@ -203,6 +229,7 @@ export class SettingsView {
     this.doc = doc;
     this.options = options;
     this.capabilities = options.capabilities;
+    this.isMac = isMacPlatform(doc.defaultView?.navigator);
 
     const onChange = (): void => this.markDirty();
 
@@ -405,6 +432,7 @@ export class SettingsView {
         fieldWrapper("retention-days", t("settings.retention_days", { count: "N" }), this.retentionDays),
         this.retentionError
       ]),
+      this.buildShortcutsSection(),
       el("p", { class: "settings__note", text: t("settings.next_session_note") }),
       this.dirtyNote,
       this.saveError
@@ -520,6 +548,172 @@ export class SettingsView {
     }
   }
 
+  private buildShortcutsSection(): HTMLElement {
+    const rows = SHORTCUTS.map((spec) => this.createShortcutRow(spec));
+    const resetAll = el("button", {
+      class: "button",
+      attrs: { type: "button", "data-action": "shortcuts-reset-all" },
+      text: t("settings.shortcuts.reset_all"),
+      on: { click: () => this.resetAllShortcuts() }
+    });
+    return el("fieldset", { class: "fieldset" }, [
+      el("legend", { class: "fieldset__legend", text: t("settings.shortcuts") }),
+      el("p", { class: "field__hint", text: t("settings.shortcuts.hint") }),
+      el(
+        "div",
+        { class: "shortcuts-list" },
+        rows.map((row) => row.wrapper)
+      ),
+      el("div", { class: "shortcuts-actions" }, [resetAll])
+    ]);
+  }
+
+  private createShortcutRow(spec: ShortcutSpec): ShortcutRow {
+    const inputId = `shortcut-${spec.id}`;
+    const errorId = `${inputId}-error`;
+    const input = el("input", {
+      class: "input shortcut-row__input",
+      attrs: {
+        type: "text",
+        id: inputId,
+        readonly: true,
+        autocomplete: "off",
+        spellcheck: "false",
+        maxlength: String(MAX_LOCAL_SHORTCUT_LENGTH),
+        "aria-describedby": errorId
+      }
+    });
+    const error = el("p", { class: "field__error", id: errorId, attrs: { role: "alert" } });
+    setHidden(error, true);
+    const label = el("label", {
+      class: "shortcut-row__label",
+      attrs: { for: inputId },
+      text: spec.label
+    });
+    const reset = el("button", {
+      class: "button shortcut-row__reset",
+      attrs: { type: "button", "data-action": `shortcut-reset-${spec.id}` },
+      text: t("settings.shortcuts.reset"),
+      title: t("settings.shortcuts.reset_action", { action: spec.label }),
+      on: { click: () => this.resetShortcut(spec) }
+    });
+    const wrapper = el("div", { class: "shortcut-row", data: { shortcutId: spec.id } }, [
+      label,
+      input,
+      reset,
+      error
+    ]);
+    input.addEventListener("keydown", (event) => this.onShortcutKeyDown(event, spec, input, error));
+    // Selecting the current combination makes an accidental edit obvious.
+    input.addEventListener("focus", () => input.select());
+    const row: ShortcutRow = { spec, wrapper, input, error };
+    this.shortcutRows.set(spec.id, row);
+    return row;
+  }
+
+  /** The stored wording of the binding a row currently uses. */
+  private displayShortcut(spec: ShortcutSpec): string {
+    return formatShortcut(effectiveShortcut(spec, this.localShortcuts), this.isMac);
+  }
+
+  private onShortcutKeyDown(
+    event: KeyboardEvent,
+    spec: ShortcutSpec,
+    input: HTMLInputElement,
+    error: HTMLElement
+  ): void {
+    // Tab keeps moving the focus, also out of the field.
+    if (event.key === "Tab") {
+      return;
+    }
+    if (event.isComposing) {
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      input.value = this.displayShortcut(spec);
+      this.clearShortcutError(input, error);
+      return;
+    }
+    if (event.key === "Backspace" || event.key === "Delete") {
+      event.preventDefault();
+      event.stopPropagation();
+      this.resetShortcut(spec);
+      return;
+    }
+    if (isModifierOnlyKey(event.key)) {
+      event.preventDefault();
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const chord = chordFromEvent(event, this.isMac);
+    if (chord === null) {
+      this.showShortcutError(input, error, t("error.shortcut_unsupported"));
+      return;
+    }
+    const issue = validateShortcutChord(chord, spec.id, this.localShortcuts);
+    if (issue !== null) {
+      this.showShortcutError(input, error, shortcutIssueMessage(issue));
+      return;
+    }
+    this.localShortcuts = { ...this.localShortcuts, [spec.id]: chord };
+    input.value = chord;
+    this.clearShortcutError(input, error);
+    this.markDirty();
+  }
+
+  private showShortcutError(
+    input: HTMLInputElement,
+    error: HTMLElement,
+    message: string
+  ): void {
+    setText(error, message);
+    setHidden(error, false);
+    input.setAttribute("aria-invalid", "true");
+    this.options.announce(message);
+  }
+
+  private clearShortcutError(input: HTMLInputElement, error: HTMLElement): void {
+    setText(error, "");
+    setHidden(error, true);
+    input.removeAttribute("aria-invalid");
+  }
+
+  /** Drop one override and show the default binding again. */
+  private resetShortcut(spec: ShortcutSpec): void {
+    const row = this.shortcutRows.get(spec.id);
+    if (spec.id in this.localShortcuts) {
+      const next = { ...this.localShortcuts };
+      delete next[spec.id];
+      this.localShortcuts = next;
+      this.markDirty();
+    }
+    if (row) {
+      row.input.value = this.displayShortcut(spec);
+      this.clearShortcutError(row.input, row.error);
+    }
+  }
+
+  private resetAllShortcuts(): void {
+    this.localShortcuts = {};
+    for (const row of this.shortcutRows.values()) {
+      row.input.value = this.displayShortcut(row.spec);
+      this.clearShortcutError(row.input, row.error);
+    }
+    this.markDirty();
+  }
+
+  /** Refresh the displayed bindings, for example after the settings changed. */
+  private populateShortcuts(settings: Settings): void {
+    this.localShortcuts = { ...settings.localShortcuts };
+    for (const row of this.shortcutRows.values()) {
+      row.input.value = this.displayShortcut(row.spec);
+      this.clearShortcutError(row.input, row.error);
+    }
+  }
+
   private markDirty(): void {
     this.dirty = true;
     setHidden(this.dirtyNote, false);
@@ -568,6 +762,7 @@ export class SettingsView {
     this.closeToTray.input.checked = settings.closeToTray;
     this.historyEnabled.input.checked = settings.historyEnabled;
     this.retentionDays.value = String(settings.retentionDays);
+    this.populateShortcuts(settings);
     this.clearErrors();
   }
 
@@ -740,12 +935,16 @@ export class SettingsView {
       config,
       notifications: this.notifications.input.checked,
       sound: this.sound.input.checked,
+      soundVolume: base.soundVolume,
+      autoAdvance: base.autoAdvance,
       globalShortcutEnabled: shortcutEnabled,
       globalShortcut: shortcutValue,
       launchAtLogin: this.launchAtLogin.input.checked,
       closeToTray: this.closeToTray.input.checked,
       historyEnabled: this.historyEnabled.input.checked,
-      retentionDays: retentionValue
+      retentionDays: retentionValue,
+      // Only usable overrides that differ from the default are stored.
+      localShortcuts: normalizeLocalShortcuts(this.localShortcuts, this.isMac)
     };
 
     return { draft, firstInvalid: null };
@@ -796,6 +995,19 @@ export class SettingsView {
       tone: "danger",
       initialFocus: "cancel"
     });
+  }
+}
+
+function shortcutIssueMessage(issue: ShortcutIssue): string {
+  switch (issue) {
+    case "duplicate":
+      return t("error.shortcut_duplicate");
+    case "bare":
+      return t("error.shortcut_bare");
+    case "reserved":
+      return t("error.shortcut_reserved");
+    default:
+      return t("error.shortcut_unsupported");
   }
 }
 

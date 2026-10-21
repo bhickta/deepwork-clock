@@ -343,6 +343,38 @@ describe("settings dialog", () => {
     expect(bridge.savedSettings[0]?.settings.config.focusMs).toBe(50 * 60_000);
   });
 
+  it("uses a remapped shortcut and shows it in the help table", async () => {
+    const bridge = new FakeBridge();
+    const root = await mount(bridge);
+
+    await openMenuItem(root, "settings");
+    const input = document.querySelector<HTMLInputElement>("#shortcut-help");
+    if (!input) {
+      throw new Error("missing shortcut field");
+    }
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "F2", bubbles: true, cancelable: true })
+    );
+    expect(input.value).toBe("F2");
+
+    const form = document.querySelector<HTMLFormElement>(".settings-form");
+    form?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await flush();
+
+    expect(bridge.savedSettings[0]?.settings.localShortcuts).toEqual({ help: "F2" });
+    expect(document.querySelector(".modal")).toBeNull();
+
+    root.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "F2", bubbles: true, cancelable: true })
+    );
+    await flush();
+
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(dialog).not.toBeNull();
+    expect(dialog?.textContent).toContain("Keyboard shortcuts");
+    expect(document.querySelector('tr[data-shortcut-id="help"] kbd')?.textContent).toBe("F2");
+  });
+
   it("keeps the edits when saving fails", async () => {
     const bridge = new FakeBridge();
     bridge.saveError = { code: "STORAGE_UNAVAILABLE", message: "the disk is read only" };

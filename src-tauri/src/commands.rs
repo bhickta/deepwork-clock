@@ -108,6 +108,16 @@ pub fn get_warnings(service: State<'_, Arc<AppService>>) -> Vec<BridgeError> {
     service.warnings()
 }
 
+/// The redacted diagnostics document as pretty JSON.
+///
+/// The frontend shows a preview before anything is copied or shared. The
+/// document never contains a label, a session or phase identifier, an absolute
+/// path or an environment variable.
+#[tauri::command]
+pub fn get_diagnostics(service: State<'_, Arc<AppService>>) -> Result<String, BridgeError> {
+    service.diagnostics_json()
+}
+
 /// The most recent durable checkpoint with its age.
 ///
 /// The frontend shows the age of a recovered session, so the user can decide
@@ -251,6 +261,7 @@ mod tests {
                 save_settings,
                 get_capabilities,
                 get_warnings,
+                get_diagnostics,
                 get_recovery,
                 window_action,
                 list_history,
@@ -439,5 +450,84 @@ mod tests {
         let app = app(directory.path());
         let warnings = invoke(&app, "get_warnings", json!({})).expect("warnings");
         assert!(warnings.is_array(), "{warnings}");
+    }
+
+    #[test]
+    fn the_diagnostics_are_redacted_and_parse() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let app = app(directory.path());
+
+        // Put the timer into a labelled running state, so that the test has a
+        // real session id, phase id and label to look for in the document.
+        let snapshot = invoke(&app, "get_snapshot", json!({})).expect("snapshot");
+        let revision = snapshot["revision"].as_u64().expect("revision");
+        let configured = invoke(
+            &app,
+            "timer_command",
+            json!({
+                "request": {
+                    "requestId": "r-1",
+                    "expectedRevision": revision,
+                    "action": {
+                        "type": "configure",
+                        "config": {
+                            "mode": "cycle",
+                            "focusMs": 3000000,
+                            "shortBreakMs": 600000,
+                            "longBreakMs": 1800000,
+                            "longBreakInterval": 4,
+                            "label": "Secret project"
+                        }
+                    }
+                }
+            }),
+        )
+        .expect("configure");
+        let revision = configured["revision"].as_u64().expect("revision");
+        let running = invoke(
+            &app,
+            "timer_command",
+            json!({
+                "request": {
+                    "requestId": "r-2",
+                    "expectedRevision": revision,
+                    "action": { "type": "start" }
+                }
+            }),
+        )
+        .expect("start");
+        let session_id = running["sessionId"]
+            .as_str()
+            .expect("a session id")
+            .to_string();
+        let phase_id = running["phaseId"].as_str().expect("a phase id").to_string();
+
+        let response = invoke(&app, "get_diagnostics", json!({})).expect("diagnostics");
+        let text = response.as_str().expect("a JSON string");
+        assert!(text.contains('\n'), "the document is pretty printed");
+        assert!(!text.contains("/home/"), "{text}");
+        assert!(
+            !text.contains(directory.path().to_str().expect("a path")),
+            "an absolute path leaked: {text}"
+        );
+        assert!(!text.contains(&session_id), "a session id leaked: {text}");
+        assert!(!text.contains(&phase_id), "a phase id leaked: {text}");
+        assert!(!text.contains("Secret project"), "a label leaked: {text}");
+
+        let parsed: Value = serde_json::from_str(text).expect("the document parses");
+        assert!(parsed["appVersion"].is_string(), "{parsed}");
+        assert!(parsed["os"].is_string(), "{parsed}");
+        assert!(parsed["architecture"].is_string(), "{parsed}");
+        assert!(parsed["settingsRevision"].is_u64(), "{parsed}");
+        assert_eq!(parsed["timer"]["status"], "running", "{parsed}");
+        assert_eq!(parsed["timer"]["phase"], "focus", "{parsed}");
+        assert_eq!(parsed["timer"]["mode"], "cycle", "{parsed}");
+        assert_eq!(parsed["features"]["autoAdvance"], false, "{parsed}");
+        assert!(
+            parsed["capabilities"]["notifications"]["state"].is_string(),
+            "{parsed}"
+        );
+        assert!(parsed["warningCodes"].is_array(), "{parsed}");
+        assert!(parsed["historyRecords"].is_u64(), "{parsed}");
     }
 }

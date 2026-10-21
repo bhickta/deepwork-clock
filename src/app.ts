@@ -7,7 +7,13 @@ import { SettingsView } from "./settings-view";
 import { TimerView } from "./timer-view";
 import { formatDurationLong, interpolateRemaining } from "./format";
 import { applyTextScale, applyTheme, watchSystemTheme } from "./theme";
-import { describeShortcut, installShortcuts, isMacPlatform, SHORTCUTS } from "./shortcuts";
+import {
+  describeShortcut,
+  effectiveShortcut,
+  installShortcuts,
+  isMacPlatform,
+  SHORTCUTS
+} from "./shortcuts";
 import { t } from "./i18n";
 import { newRequestId, toAppError, type Bridge } from "./bridge";
 import type {
@@ -116,7 +122,12 @@ export class App {
 
   private compactButton!: HTMLButtonElement;
 
+  private floatButton!: HTMLButtonElement;
+
   private pinButton!: HTMLButtonElement;
+
+  /** The `<kbd>` of each help row, so a remapped shortcut updates it. */
+  private readonly helpKeys = new Map<string, HTMLElement>();
 
   private viewMode: "normal" | "compact" = "normal";
 
@@ -185,6 +196,7 @@ export class App {
       this.settings = settings;
       this.capabilities = capabilities;
       this.applyThemeSettings();
+      this.updateHelpShortcuts();
       this.applyCapabilities();
       const snapshot = await this.bridge.getSnapshot();
       this.applySnapshot(snapshot);
@@ -344,6 +356,24 @@ export class App {
       ]
     );
 
+    this.floatButton = el(
+      "button",
+      {
+        class: "icon-button",
+        attrs: {
+          type: "button",
+          title: t("window.float"),
+          "data-action": "float",
+          "aria-pressed": "false"
+        },
+        on: { click: () => void this.toggleFloat() }
+      },
+      [
+        el("span", { class: "button__icon" }, [createIcon("float", 18)]),
+        el("span", { class: "sr-only", text: t("window.float") })
+      ]
+    );
+
     this.pinButton = el(
       "button",
       {
@@ -383,6 +413,11 @@ export class App {
           onSelect: () => this.openHelp()
         },
         { id: "history", label: t("label.history"), onSelect: () => this.openHistory() },
+        {
+          id: "restore-window",
+          label: t("window.restore_position"),
+          onSelect: () => void this.restoreWindowPosition()
+        },
         { id: "about", label: t("action.about"), onSelect: () => this.openAbout() }
       ]
     });
@@ -395,6 +430,7 @@ export class App {
         [
           this.warningButton,
           this.compactButton,
+          this.floatButton,
           this.pinButton,
           el("div", { class: "menu-anchor" }, [menuButton])
         ]
@@ -440,14 +476,14 @@ export class App {
   private createHelpModal(): Modal {
     const modal = new Modal(this.doc, { title: t("help.title"), size: "medium" });
     const isMac = isMacPlatform(this.doc.defaultView?.navigator);
-    const rows = SHORTCUTS.map((spec) =>
-      el("tr", {}, [
+    const rows = SHORTCUTS.map((spec) => {
+      const keys = el("kbd", { text: describeShortcut(spec, isMac) });
+      this.helpKeys.set(spec.id, keys);
+      return el("tr", { data: { shortcutId: spec.id } }, [
         el("th", { attrs: { scope: "row" }, text: spec.label }),
-        el("td", { class: "help__keys" }, [
-          el("kbd", { text: describeShortcut(spec, isMac) })
-        ])
-      ])
-    );
+        el("td", { class: "help__keys" }, [keys])
+      ]);
+    });
     const table = el("table", { class: "help__table" }, [
       el("caption", { class: "sr-only", text: t("help.title") }),
       el("thead", {}, [
@@ -492,13 +528,28 @@ export class App {
         reset: () => void this.handleReset(),
         next: () => void this.handleSkip(),
         compact: () => void this.toggleCompact(),
+        float: () => void this.toggleFloat(),
         pin: () => void this.togglePin(),
         settings: () => this.openSettings(),
         help: () => this.openHelp(),
         announce: () => this.announceRemaining()
       },
-      isMac
+      isMac,
+      // Resolved on every keydown, so a saved remap applies immediately.
+      () => this.settings?.localShortcuts ?? {}
     );
+  }
+
+  /** Show the bindings that are really in use, including local remaps. */
+  private updateHelpShortcuts(): void {
+    const isMac = isMacPlatform(this.doc.defaultView?.navigator);
+    const overrides = this.settings?.localShortcuts ?? {};
+    for (const spec of SHORTCUTS) {
+      const keys = this.helpKeys.get(spec.id);
+      if (keys) {
+        setText(keys, describeShortcut(effectiveShortcut(spec, overrides), isMac));
+      }
+    }
   }
 
   private applySnapshot(snapshot: Snapshot): void {
@@ -933,6 +984,7 @@ export class App {
       const saved = await this.bridge.saveSettings({ expectedSettingsRevision, settings: draft });
       this.settings = saved;
       this.applyThemeSettings();
+      this.updateHelpShortcuts();
       this.applyCapabilities();
       return null;
     } catch (error) {
@@ -957,8 +1009,8 @@ export class App {
   private applyCapabilities(): void {
     const pin = this.capabilities["pin"];
     const state = pin?.state ?? "unknown";
-    this.pinButton.setAttribute("aria-pressed", this.pinned ? "true" : "false");
-    if (state === "unavailable" || state === "permission_required") {
+    const blocked = state === "unavailable" || state === "permission_required";
+    if (blocked) {
       // The request would be refused, so it is not sent at all.
       this.pinButton.setAttribute("aria-disabled", "true");
       const reason = pin ? pin.reason : "";
@@ -968,7 +1020,59 @@ export class App {
       this.pinButton.title =
         state === "unknown" ? t("pin.unknown_state") : t("settings.capability.available");
     }
+    this.updateWindowControls();
     this.settingsView.updateCapabilities(this.capabilities);
+  }
+
+  /** The floating view is the compact window that also asked to stay on top. */
+  private isFloating(): boolean {
+    return this.viewMode === "compact" && this.pinned;
+  }
+
+  /**
+   * Reflect the derived window state on the header controls.
+   *
+   * The floating button is pressed only while the window is both compact and
+   * pinned, so it never claims a state the two underlying requests do not
+   * describe.
+   */
+  private updateWindowControls(): void {
+    const pin = this.capabilities["pin"];
+    const state = pin?.state ?? "unknown";
+    const blocked = state === "unavailable" || state === "permission_required";
+    const floating = this.isFloating();
+    this.pinButton.setAttribute("aria-pressed", this.pinned ? "true" : "false");
+    this.floatButton.setAttribute("aria-pressed", floating ? "true" : "false");
+    if (blocked) {
+      const reason = pin?.reason ?? t("settings.capability.missing");
+      const note = `${t("settings.capability.unavailable")} ${reason}`.trim();
+      this.floatButton.setAttribute("aria-disabled", "true");
+      this.floatButton.title = `${t("window.float")} — ${note}`;
+    } else {
+      this.floatButton.removeAttribute("aria-disabled");
+      this.floatButton.title = floating ? t("window.unfloat") : t("window.float");
+    }
+    const floatLabel = this.floatButton.querySelector(".sr-only");
+    if (floatLabel) {
+      setText(floatLabel, floating ? t("window.unfloat") : t("window.float"));
+    }
+    const pinLabel = this.pinButton.querySelector(".sr-only");
+    if (pinLabel) {
+      setText(pinLabel, this.pinned ? t("action.unpin") : t("action.pin"));
+    }
+  }
+
+  private updateCompactButton(): void {
+    const compacted = this.viewMode === "compact";
+    const icon = this.compactButton.querySelector<HTMLElement>(".button__icon");
+    if (icon) {
+      setIcon(icon, compacted ? "expand" : "compact", 18);
+    }
+    this.compactButton.title = compacted ? t("window.normal") : t("window.compact");
+    const label = this.compactButton.querySelector(".sr-only");
+    if (label) {
+      setText(label, this.compactButton.title);
+    }
   }
 
   private async toggleCompact(): Promise<void> {
@@ -977,16 +1081,42 @@ export class App {
       await this.bridge.windowAction(next);
       this.viewMode = next;
       this.root.setAttribute("data-view", next);
-      const icon = this.compactButton.querySelector<HTMLElement>(".button__icon");
-      if (icon) {
-        setIcon(icon, next === "compact" ? "expand" : "compact", 18);
-      }
-      this.compactButton.title = next === "compact" ? t("window.normal") : t("window.compact");
-      const label = this.compactButton.querySelector(".sr-only");
-      if (label) {
-        setText(label, this.compactButton.title);
-      }
+      this.updateCompactButton();
+      // A plain compact switch never sends a second window request; the
+      // floating state is derived from the compact and pin flags.
+      this.updateWindowControls();
       this.announce(next === "compact" ? t("window.compact") : t("window.normal"));
+    } catch (error) {
+      this.showError(toAppError(error).message);
+    }
+  }
+
+  private async toggleFloat(): Promise<void> {
+    const pin = this.capabilities["pin"];
+    const state = pin?.state ?? "unknown";
+    if (state === "unavailable" || state === "permission_required") {
+      const reason = pin?.reason ?? t("settings.capability.missing");
+      const message = t("window.float.unavailable", { reason });
+      this.showNotice(message);
+      this.announce(message);
+      return;
+    }
+    const floating = this.isFloating();
+    try {
+      // One request carries the whole change: the backend owns the window.
+      await this.bridge.windowAction(floating ? "unfloat" : "float");
+      this.viewMode = floating ? "normal" : "compact";
+      this.pinned = !floating;
+      this.root.setAttribute("data-view", this.viewMode);
+      this.updateCompactButton();
+      this.updateWindowControls();
+      if (state === "unknown") {
+        // The request was sent, but the desktop decides the result.
+        this.showNotice(t("float.request_sent"));
+      } else {
+        this.showNotice(floating ? t("float.disabled") : t("float.enabled"));
+      }
+      this.announce(floating ? t("announce.float_off") : t("announce.float_on"));
     } catch (error) {
       this.showError(toAppError(error).message);
     }
@@ -1005,7 +1135,7 @@ export class App {
     try {
       await this.bridge.windowAction(this.pinned ? "unpin" : "pin");
       this.pinned = !this.pinned;
-      this.pinButton.setAttribute("aria-pressed", this.pinned ? "true" : "false");
+      this.updateWindowControls();
       if (state === "unknown") {
         // The request was sent, but the desktop owns the result: a
         // compositor may ignore it and the frontend cannot know.
@@ -1013,6 +1143,17 @@ export class App {
       } else {
         this.showNotice(this.pinned ? t("pin.enabled") : t("pin.disabled"));
       }
+    } catch (error) {
+      this.showError(toAppError(error).message);
+    }
+  }
+
+  /** Ask the backend to reset and centre the window. */
+  private async restoreWindowPosition(): Promise<void> {
+    try {
+      await this.bridge.windowAction("restore");
+      this.showNotice(t("window.restored"));
+      this.announce(t("window.restored"));
     } catch (error) {
       this.showError(toAppError(error).message);
     }

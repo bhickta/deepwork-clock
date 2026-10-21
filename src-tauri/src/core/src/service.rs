@@ -7,10 +7,24 @@
 //! clock reading, which keeps the whole timer path deterministic in tests.
 
 use chrono::{DateTime, Utc};
-use deepwork_engine::{Action, Config, Engine, Snapshot, Status, Transition};
+use deepwork_engine::{Action, Config, Effect, Engine, Mode, Snapshot, Status, Transition};
 
 use crate::error::BridgeError;
 use crate::settings::Settings;
+
+/// Interval at which a running timer is sampled by the deadline thread.
+pub const TICK_INTERVAL_MS: u64 = 1_000;
+
+/// Extra slack on top of two tick intervals before a completion is treated as
+/// having happened across a gap (suspend, stall or a missed deadline check).
+pub const TICK_GAP_TOLERANCE_MS: u64 = 1_000;
+
+/// Largest sampling gap that still counts as continuous awake time.
+///
+/// A completion that happened after a longer gap is never advanced
+/// automatically: the machine may have been asleep, so the phase waits for an
+/// explicit user action.
+pub const AUTO_ADVANCE_GAP_LIMIT_MS: u64 = TICK_INTERVAL_MS * 2 + TICK_GAP_TOLERANCE_MS;
 
 /// Owns the engine and the settings document.
 #[derive(Debug)]
@@ -29,6 +43,10 @@ pub struct TimerService {
     /// Set when a suspend, resume or other long gap was observed. The next
     /// finished phase is then recorded as interrupted.
     interruption_pending: bool,
+    /// Elapsed sample of the previous command or deadline check. It is used to
+    /// recognise a sampling gap, so that an automatic phase change never
+    /// happens across a suspend or a stalled process.
+    last_sample_elapsed: Option<u64>,
 }
 
 impl TimerService {
@@ -42,6 +60,7 @@ impl TimerService {
             tracked_phase_id: None,
             phase_started_at: None,
             interruption_pending: false,
+            last_sample_elapsed: None,
         }
     }
 
@@ -124,6 +143,7 @@ impl TimerService {
             .apply(action, elapsed_ms)
             .map_err(BridgeError::from)?;
         self.command_revision = transition.snapshot.revision;
+        self.last_sample_elapsed = Some(elapsed_ms);
         self.track_phase(&transition.snapshot, now);
         Ok(transition)
     }
@@ -135,17 +155,67 @@ impl TimerService {
     /// command, because nothing about the state machine changed.
     ///
     /// A completion is different. It is a semantic boundary: the phase is
-    /// over, it was recorded, and the next phase waits. A client that still
-    /// holds the revision from before the completion is therefore stale, so
-    /// that a destructive command cannot be applied to a phase that has
-    /// already ended.
+    /// over and it was recorded. A client that still holds the revision from
+    /// before the completion is therefore stale, so that a destructive command
+    /// cannot be applied to a phase that has already ended.
+    ///
+    /// When `settings.auto_advance` is on and the completion happened during
+    /// continuous awake time, the next cycle phase is selected in the same
+    /// call. The completion effect is kept, so a completion is still recorded
+    /// and announced exactly once. After a long sampling gap the phase stays
+    /// completed and waits for an explicit action.
     pub fn tick(&mut self, elapsed_ms: u64, now: DateTime<Utc>) -> Transition {
-        let transition = self.engine.tick(elapsed_ms);
+        let previous_sample = self.last_sample_elapsed.replace(elapsed_ms);
+        let mut transition = self.engine.tick(elapsed_ms);
+        let completed = transition
+            .effects
+            .iter()
+            .any(|effect| matches!(effect, Effect::PhaseCompleted { .. }));
         if !transition.effects.is_empty() {
             self.command_revision = transition.snapshot.revision;
         }
+        if completed && self.auto_advance_allowed(&transition.snapshot, previous_sample, elapsed_ms)
+        {
+            // `Advance` can only fail in countdown mode, which is filtered out
+            // by `auto_advance_allowed`. If it fails anyway the completed
+            // phase simply stays visible, exactly like a manual advance that
+            // was not accepted.
+            if let Ok(mut advanced) = self.engine.apply(Action::Advance, elapsed_ms) {
+                let mut effects = std::mem::take(&mut transition.effects);
+                effects.append(&mut advanced.effects);
+                transition = Transition {
+                    snapshot: advanced.snapshot,
+                    effects,
+                };
+                self.command_revision = transition.snapshot.revision;
+            }
+        }
         self.track_phase(&transition.snapshot, now);
         transition
+    }
+
+    /// Whether a completion that was just observed may move to the next phase
+    /// on its own.
+    ///
+    /// Auto-advance is opt-in and only valid for a cycle. It is refused when
+    /// the completion may have happened across a suspend or a stalled
+    /// process, because the next phase must never start itself after the
+    /// machine was asleep.
+    fn auto_advance_allowed(
+        &self,
+        snapshot: &Snapshot,
+        previous_sample: Option<u64>,
+        elapsed_ms: u64,
+    ) -> bool {
+        if !self.settings.auto_advance || snapshot.mode != Mode::Cycle {
+            return false;
+        }
+        match previous_sample {
+            Some(previous) => elapsed_ms.saturating_sub(previous) <= AUTO_ADVANCE_GAP_LIMIT_MS,
+            // No previous sample: the elapsed history is unknown, so the
+            // conservative choice is to wait for an explicit action.
+            None => false,
+        }
     }
 
     /// Restores a checkpoint. The engine turns an active record into
@@ -157,6 +227,9 @@ impl TimerService {
         self.tracked_phase_id = None;
         self.phase_started_at = None;
         self.interruption_pending = false;
+        // The sample history of this process says nothing about the time
+        // between the checkpoint and the restart.
+        self.last_sample_elapsed = None;
         Ok(())
     }
 
@@ -206,7 +279,7 @@ impl TimerService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use deepwork_engine::{Action, Config};
+    use deepwork_engine::{Action, Config, Phase};
 
     fn service() -> TimerService {
         TimerService::new(Settings::default())
@@ -216,6 +289,36 @@ mod tests {
         DateTime::parse_from_rfc3339("2026-01-01T10:00:00Z")
             .expect("parse")
             .with_timezone(&Utc)
+    }
+
+    fn cycle_config() -> Config {
+        Config {
+            mode: Mode::Cycle,
+            focus_ms: 1_000,
+            short_break_ms: 1_000,
+            long_break_ms: 1_000,
+            long_break_interval: 4,
+            label: String::new(),
+        }
+    }
+
+    /// Configures and starts a short cycle phase.
+    fn started_cycle(service: &mut TimerService) {
+        let revision = service.snapshot().revision;
+        service
+            .apply(
+                Action::Configure {
+                    config: cycle_config(),
+                },
+                0,
+                now(),
+                Some(revision),
+            )
+            .expect("configure");
+        let revision = service.snapshot().revision;
+        service
+            .apply(Action::Start, 0, now(), Some(revision))
+            .expect("start");
     }
 
     #[test]
@@ -370,5 +473,88 @@ mod tests {
         assert!(!service.interruption_pending());
         service.mark_interrupted();
         assert!(service.interruption_pending());
+    }
+
+    #[test]
+    fn auto_advance_completes_the_phase_and_selects_the_next_one() {
+        let mut service = service();
+        service.settings.auto_advance = true;
+        started_cycle(&mut service);
+
+        let transition = service.tick(1_000, now());
+        assert_eq!(transition.effects.len(), 1, "{:?}", transition.effects);
+        assert!(matches!(
+            transition.effects[0],
+            Effect::PhaseCompleted {
+                phase: Phase::Focus,
+                ..
+            }
+        ));
+        // One completion selected the next phase, which waits idle.
+        assert_eq!(transition.snapshot.phase, Phase::ShortBreak);
+        assert_eq!(transition.snapshot.status, Status::Idle);
+        assert_eq!(transition.snapshot.completed_focus_count, 1);
+
+        // A later deadline check cannot advance a second time.
+        let later = service.tick(1_100, now());
+        assert!(later.effects.is_empty(), "{:?}", later.effects);
+        assert_eq!(later.snapshot.phase, Phase::ShortBreak);
+        assert_eq!(later.snapshot.status, Status::Idle);
+    }
+
+    #[test]
+    fn a_completed_phase_stays_completed_without_auto_advance() {
+        let mut service = service();
+        assert!(!service.settings.auto_advance, "off by default");
+        started_cycle(&mut service);
+
+        let transition = service.tick(1_000, now());
+        assert_eq!(transition.effects.len(), 1, "{:?}", transition.effects);
+        assert_eq!(transition.snapshot.phase, Phase::Focus);
+        assert_eq!(transition.snapshot.status, Status::Completed);
+        assert_eq!(transition.snapshot.completed_focus_count, 1);
+    }
+
+    #[test]
+    fn auto_advance_does_not_cross_a_large_gap() {
+        let mut service = service();
+        service.settings.auto_advance = true;
+        started_cycle(&mut service);
+
+        // More than two tick intervals plus the tolerance passed between the
+        // start of the phase and this check: the machine may have been
+        // asleep, so the phase has to wait for an explicit action.
+        let transition = service.tick(AUTO_ADVANCE_GAP_LIMIT_MS + 1, now());
+        assert_eq!(transition.effects.len(), 1, "{:?}", transition.effects);
+        assert_eq!(transition.snapshot.phase, Phase::Focus);
+        assert_eq!(transition.snapshot.status, Status::Completed);
+    }
+
+    #[test]
+    fn auto_advance_never_changes_a_countdown() {
+        let mut service = service();
+        service.settings.auto_advance = true;
+        let revision = service.snapshot().revision;
+        service
+            .apply(
+                Action::Configure {
+                    config: Config {
+                        mode: Mode::Countdown,
+                        ..cycle_config()
+                    },
+                },
+                0,
+                now(),
+                Some(revision),
+            )
+            .expect("configure");
+        let revision = service.snapshot().revision;
+        service
+            .apply(Action::Start, 0, now(), Some(revision))
+            .expect("start");
+
+        let transition = service.tick(1_000, now());
+        assert_eq!(transition.snapshot.phase, Phase::Focus);
+        assert_eq!(transition.snapshot.status, Status::Completed);
     }
 }

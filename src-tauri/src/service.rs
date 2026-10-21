@@ -27,7 +27,7 @@ use chrono::{DateTime, Local, Utc};
 use deepwork_core::history::{HistoryOutcome, HistoryPhase, HistoryRecord};
 use deepwork_core::recovery::RecoveryRecord;
 use deepwork_core::{BridgeError, HistoryBook, Settings, TimerService};
-use deepwork_engine::{Action, Effect, Snapshot, Status};
+use deepwork_engine::{Action, Effect, Mode, Phase, Snapshot, Status};
 
 use crate::platform;
 use crate::platform::capabilities::{Capability, CapabilityState};
@@ -73,6 +73,56 @@ pub struct RecoveryInfo {
     pub phase_id: Option<String>,
     /// The remaining time of that phase.
     pub remaining_ms: u64,
+}
+
+/// Redacted diagnostics that the user can preview before sharing them.
+///
+/// The document deliberately contains no session or phase identifiers, no
+/// label, no settings text, no absolute paths and no environment variables. It
+/// is safe to show in the About view and to copy into a bug report.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Diagnostics {
+    /// The version of this build.
+    pub app_version: &'static str,
+    /// The operating system family, for example `linux`.
+    pub os: &'static str,
+    /// The processor architecture, for example `x86_64`.
+    pub architecture: &'static str,
+    /// Revision of the settings document; never its content.
+    pub settings_revision: u64,
+    /// The settings that are switches, without any text value.
+    pub features: DiagnosticFeatures,
+    /// The timer state, without identifiers or a label.
+    pub timer: DiagnosticTimer,
+    /// Capability names with their state and reason.
+    pub capabilities: BTreeMap<String, Capability>,
+    /// Codes of the warnings that are still relevant, never their messages.
+    pub warning_codes: Vec<String>,
+    /// Number of retained history records.
+    pub history_records: usize,
+}
+
+/// The boolean settings, exposed as feature flags.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiagnosticFeatures {
+    pub notifications: bool,
+    pub sound: bool,
+    pub global_shortcut_enabled: bool,
+    pub launch_at_login: bool,
+    pub close_to_tray: bool,
+    pub history_enabled: bool,
+    pub auto_advance: bool,
+}
+
+/// The observable timer state that is safe to share.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiagnosticTimer {
+    pub mode: Mode,
+    pub phase: Phase,
+    pub status: Status,
 }
 
 /// The application service.
@@ -557,6 +607,57 @@ impl AppService {
             .lock()
             .map(|warnings| warnings.clone())
             .unwrap_or_default()
+    }
+
+    /// The number of retained history records.
+    pub fn history_count(&self) -> usize {
+        self.inner
+            .lock()
+            .map(|inner| inner.history.records().len())
+            .unwrap_or_default()
+    }
+
+    /// The redacted diagnostics document.
+    ///
+    /// Only the fields documented on [`Diagnostics`] are collected, so
+    /// personal text cannot leak through a new setting by accident.
+    pub fn diagnostics(&self) -> Diagnostics {
+        let settings = self.settings();
+        let snapshot = self.snapshot();
+        Diagnostics {
+            app_version: env!("CARGO_PKG_VERSION"),
+            os: std::env::consts::OS,
+            architecture: std::env::consts::ARCH,
+            settings_revision: settings.revision,
+            features: DiagnosticFeatures {
+                notifications: settings.notifications,
+                sound: settings.sound,
+                global_shortcut_enabled: settings.global_shortcut_enabled,
+                launch_at_login: settings.launch_at_login,
+                close_to_tray: settings.close_to_tray,
+                history_enabled: settings.history_enabled,
+                auto_advance: settings.auto_advance,
+            },
+            timer: DiagnosticTimer {
+                mode: snapshot.mode,
+                phase: snapshot.phase,
+                status: snapshot.status,
+            },
+            capabilities: self.capabilities(),
+            warning_codes: self
+                .warnings()
+                .iter()
+                .map(|warning| warning.code.clone())
+                .collect(),
+            history_records: self.history_count(),
+        }
+    }
+
+    /// The redacted diagnostics document as pretty JSON.
+    pub fn diagnostics_json(&self) -> Result<String, BridgeError> {
+        serde_json::to_string_pretty(&self.diagnostics()).map_err(|error| {
+            BridgeError::internal(format!("The diagnostics could not be prepared. {error}"))
+        })
     }
 
     /// Shows a notification for a finished phase.
@@ -1216,6 +1317,52 @@ mod tests {
             !recorded.snapshots.is_empty(),
             "the new state was published"
         );
+    }
+
+    #[test]
+    fn auto_advance_publishes_the_next_phase_once() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let (service, host) =
+            service_with_host(directory.path(), directory.path().join("settings.json"));
+        let mut settings = service.settings();
+        settings.notifications = true;
+        settings.auto_advance = true;
+        service.save_settings(settings, 0).expect("settings");
+
+        let revision = service.snapshot().revision;
+        service
+            .apply_command(
+                Action::Configure {
+                    config: Config {
+                        mode: Mode::Cycle,
+                        ..short_config()
+                    },
+                },
+                0,
+                now(),
+                Some(revision),
+            )
+            .expect("configure");
+        let revision = service.snapshot().revision;
+        service
+            .apply_command(Action::Start, 0, now(), Some(revision))
+            .expect("start");
+
+        let changed = service.tick(1_500, now(), 0).expect("the state changed");
+        assert_eq!(changed.status, Status::Idle);
+        assert_eq!(
+            changed.phase,
+            deepwork_engine::Phase::ShortBreak,
+            "{changed:?}"
+        );
+        assert_eq!(changed.completed_focus_count, 1);
+
+        // One completion, one notification and one history record; the next
+        // deadline check does not complete or advance anything again.
+        assert_eq!(host.recorded().notifications.len(), 1);
+        assert_eq!(service.all_history().len(), 1);
+        assert!(service.tick(1_600, now(), 0).is_none());
+        assert_eq!(service.all_history().len(), 1);
     }
 
     #[test]

@@ -72,6 +72,11 @@ pub fn run() {
             let service = AppService::new(host, store)?;
             app.manage(service.clone());
 
+            // Restore the remembered window rectangle, clamped to the current
+            // monitors, before tracking later moves and resizes.
+            platform::window::restore_placement(&handle);
+            platform::window::install_placement_tracking(&handle);
+
             // The tray is optional. When the desktop does not accept a tray
             // icon the application keeps working and the window stays the
             // only way to reach it.
@@ -153,6 +158,7 @@ pub fn run() {
             commands::save_settings,
             commands::get_capabilities,
             commands::get_warnings,
+            commands::get_diagnostics,
             commands::get_recovery,
             commands::window_action,
             commands::list_history,

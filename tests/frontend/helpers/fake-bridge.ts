@@ -49,12 +49,15 @@ export function makeSettings(overrides: Partial<Settings> = {}): Settings {
     },
     notifications: false,
     sound: false,
+    soundVolume: 60,
+    autoAdvance: false,
     globalShortcutEnabled: false,
     globalShortcut: "",
     launchAtLogin: false,
     closeToTray: false,
     historyEnabled: true,
     retentionDays: 90,
+    localShortcuts: {},
     ...overrides
   };
 }

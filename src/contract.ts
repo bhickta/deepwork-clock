@@ -8,6 +8,9 @@
 export const SNAPSHOT_SCHEMA_VERSION = 1;
 export const SETTINGS_SCHEMA_VERSION = 1;
 
+/** The longest accepted value of one local shortcut override. */
+export const MAX_LOCAL_SHORTCUT_LENGTH = 64;
+
 export type Mode = "countdown" | "cycle";
 export type Phase = "focus" | "short_break" | "long_break";
 export type Status = "idle" | "running" | "paused" | "completed" | "recovery_pending";
@@ -15,7 +18,14 @@ export type Theme = "system" | "light" | "dark" | "high-contrast";
 export type Outcome = "completed" | "skipped" | "ended";
 export type CapabilityState = "available" | "unavailable" | "permission_required" | "unknown";
 export type ExportFormat = "csv" | "json";
-export type WindowAction = "compact" | "normal" | "pin" | "unpin" | "restore";
+export type WindowAction =
+  | "compact"
+  | "normal"
+  | "pin"
+  | "unpin"
+  | "float"
+  | "unfloat"
+  | "restore";
 
 export const MODES: readonly Mode[] = ["countdown", "cycle"];
 export const PHASES: readonly Phase[] = ["focus", "short_break", "long_break"];
@@ -83,12 +93,16 @@ export interface Settings {
   config: TimerConfig;
   notifications: boolean;
   sound: boolean;
+  soundVolume: number;
+  autoAdvance: boolean;
   globalShortcutEnabled: boolean;
   globalShortcut: string;
   launchAtLogin: boolean;
   closeToTray: boolean;
   historyEnabled: boolean;
   retentionDays: number;
+  /** Local shortcut overrides, keyed by shortcut id. Empty means defaults. */
+  localShortcuts: Record<string, string>;
 }
 
 export interface Capability {
@@ -218,6 +232,15 @@ function requireNonNegativeInteger(record: Record<string, unknown>, key: string)
   return value;
 }
 
+/** A whole number from 0 to 100, inclusive. */
+function requirePercentage(record: Record<string, unknown>, key: string): number {
+  const value = requireInteger(record, key);
+  if (value < 0 || value > 100) {
+    throw new ContractError(`Expected "${key}" to be between 0 and 100.`);
+  }
+  return value;
+}
+
 function requireEnum<T extends string>(
   record: Record<string, unknown>,
   key: string,
@@ -268,6 +291,31 @@ export function parseConfig(raw: unknown): TimerConfig {
   };
 }
 
+/**
+ * Validate the local shortcut overrides.
+ *
+ * A backend that does not send the field yet is treated as "no overrides", so
+ * the default bindings stay available. A malformed value is refused instead of
+ * silently changing how the application reacts to the keyboard.
+ */
+export function parseLocalShortcuts(raw: unknown): Record<string, string> {
+  if (raw === undefined || raw === null) {
+    return {};
+  }
+  const record = asRecord(raw, "localShortcuts");
+  const result: Record<string, string> = {};
+  for (const [id, value] of Object.entries(record)) {
+    if (typeof value !== "string") {
+      throw new ContractError(`Expected the local shortcut "${id}" to be a string.`);
+    }
+    if (value.length > MAX_LOCAL_SHORTCUT_LENGTH) {
+      throw new ContractError(`The local shortcut "${id}" is too long.`);
+    }
+    result[id] = value;
+  }
+  return result;
+}
+
 /** Validate and narrow the settings document. */
 export function parseSettings(raw: unknown): Settings {
   const record = asRecord(raw, "settings");
@@ -285,12 +333,15 @@ export function parseSettings(raw: unknown): Settings {
     config: parseConfig(record["config"]),
     notifications: requireBoolean(record, "notifications"),
     sound: requireBoolean(record, "sound"),
+    soundVolume: requirePercentage(record, "soundVolume"),
+    autoAdvance: requireBoolean(record, "autoAdvance"),
     globalShortcutEnabled: requireBoolean(record, "globalShortcutEnabled"),
     globalShortcut: requireString(record, "globalShortcut"),
     launchAtLogin: requireBoolean(record, "launchAtLogin"),
     closeToTray: requireBoolean(record, "closeToTray"),
     historyEnabled: requireBoolean(record, "historyEnabled"),
-    retentionDays: requireNonNegativeInteger(record, "retentionDays")
+    retentionDays: requireNonNegativeInteger(record, "retentionDays"),
+    localShortcuts: parseLocalShortcuts(record["localShortcuts"])
   };
 }
 

@@ -3,10 +3,21 @@
 //! The timer uses a single window. Compact mode and the normal view are two
 //! sizes of that window, so switching between them can never pause or reset
 //! the session and there is never a second state owner.
+//!
+//! The floating action combines the compact size with "keep above other
+//! windows". Placement persistence, monitor recovery and the "Restore
+//! defaults" rectangle live in [`super::placement`].
 
-use tauri::{AppHandle, LogicalSize, Manager, Runtime};
+use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, Runtime};
 
 use deepwork_core::BridgeError;
+
+use super::placement;
+
+// Called from `lib.rs` setup. That file belongs to the integrator, so the
+// re-export is unused until the wiring lands.
+#[allow(unused_imports)]
+pub use super::placement::{install_placement_tracking, restore_placement};
 
 /// Label of the only window of the application.
 pub const MAIN_WINDOW_LABEL: &str = "main";
@@ -23,6 +34,13 @@ pub const NORMAL_HEIGHT: f64 = 440.0;
 pub const COMPACT_WIDTH: f64 = 320.0;
 pub const COMPACT_HEIGHT: f64 = 200.0;
 
+/// The smallest window size that placement recovery restores.
+///
+/// A saved rectangle smaller than this is treated as corrupt, so a bad value
+/// cannot reopen an invisible window.
+pub const MIN_WIDTH: f64 = 160.0;
+pub const MIN_HEIGHT: f64 = 120.0;
+
 /// The allowlisted window actions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WindowAction {
@@ -30,6 +48,8 @@ pub enum WindowAction {
     Normal,
     Pin,
     Unpin,
+    Float,
+    Unfloat,
     Restore,
 }
 
@@ -40,6 +60,8 @@ pub fn parse_action(raw: &str) -> Option<WindowAction> {
         "normal" => Some(WindowAction::Normal),
         "pin" => Some(WindowAction::Pin),
         "unpin" => Some(WindowAction::Unpin),
+        "float" => Some(WindowAction::Float),
+        "unfloat" => Some(WindowAction::Unfloat),
         "restore" => Some(WindowAction::Restore),
         _ => None,
     }
@@ -109,7 +131,36 @@ pub fn apply<R: Runtime>(app: &AppHandle<R>, action: WindowAction) -> Result<(),
                 BridgeError::internal(format!("Could not unpin the window. {error}"))
             })?;
         }
+        WindowAction::Float => {
+            // On Wayland the compositor owns the stacking order. Return the
+            // typed capability error and change nothing at all, so the
+            // interface cannot show a compact window that claims to float.
+            let (support, reason) = pin_support();
+            if support == PinSupport::Unavailable {
+                return Err(BridgeError::unsupported(reason));
+            }
+            set_size(&window, COMPACT_WIDTH, COMPACT_HEIGHT)?;
+            window.set_always_on_top(true).map_err(|error| {
+                BridgeError::internal(format!("Could not float the window. {error}"))
+            })?;
+        }
+        WindowAction::Unfloat => {
+            set_size(&window, NORMAL_WIDTH, NORMAL_HEIGHT)?;
+            window.set_always_on_top(false).map_err(|error| {
+                BridgeError::internal(format!("Could not unfloat the window. {error}"))
+            })?;
+        }
         WindowAction::Restore => {
+            // "Restore defaults": forget an invalid remembered rectangle,
+            // return to the normal size and centre on the primary monitor.
+            // This is the reliable recovery path after a monitor change.
+            let placement = placement::default_placement(app);
+            set_size(&window, placement.width, placement.height)?;
+            // Wayland compositors may ignore the position; showing and
+            // focusing the window below still works, so a failed position
+            // request is not an error here.
+            let _ = window.set_position(LogicalPosition::new(placement.x, placement.y));
+            placement::forget(app);
             restore(&window);
         }
     }
@@ -158,6 +209,8 @@ mod tests {
         assert_eq!(parse_action("NORMAL"), Some(WindowAction::Normal));
         assert_eq!(parse_action(" pin "), Some(WindowAction::Pin));
         assert_eq!(parse_action("unpin"), Some(WindowAction::Unpin));
+        assert_eq!(parse_action("float"), Some(WindowAction::Float));
+        assert_eq!(parse_action("UNFLOAT"), Some(WindowAction::Unfloat));
         assert_eq!(parse_action("restore"), Some(WindowAction::Restore));
     }
 
@@ -167,6 +220,9 @@ mod tests {
         assert_eq!(parse_action("close"), None);
         assert_eq!(parse_action("exec"), None);
         assert_eq!(parse_action("../etc/passwd"), None);
+        // `float` is an action, but only the exact name; no variants.
+        assert_eq!(parse_action("float-on-top"), None);
+        assert_eq!(parse_action("float "), Some(WindowAction::Float));
     }
 
     #[test]

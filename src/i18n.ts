@@ -136,6 +136,12 @@ const CATALOG = {
   "settings.capability.unknown": "Support for this option could not be verified.",
   "settings.capability.missing": "This desktop app did not report support for this option.",
   "settings.dirty_note": "You have unsaved changes.",
+  "settings.shortcuts": "Shortcuts",
+  "settings.shortcuts.hint":
+    "Focus a shortcut field and press the keys you want to use. Delete clears a custom shortcut; Escape cancels.",
+  "settings.shortcuts.reset": "Reset",
+  "settings.shortcuts.reset_action": "Reset the shortcut for {action}",
+  "settings.shortcuts.reset_all": "Reset all",
 
   "error.invalid_duration": "Choose a duration between 1 second and 24 hours.",
   "error.invalid_label": "The session label must be {max} characters or fewer.",
@@ -144,6 +150,10 @@ const CATALOG = {
   "error.invalid_text_scale": "Choose a text size between 100% and 200%.",
   "error.invalid_retention": "Choose a retention period between 1 and 3650 days.",
   "error.invalid_shortcut": "Use a combination such as CommandOrControl+Alt+Shift+Space.",
+  "error.shortcut_duplicate": "That combination is already used by another action.",
+  "error.shortcut_bare": "Use Ctrl, Cmd or Alt, or a function key from F1 to F12.",
+  "error.shortcut_reserved": "The operating system reserves that combination.",
+  "error.shortcut_unsupported": "That key cannot be used as a shortcut.",
   "error.shortcut_required": "Enter a shortcut or turn the global shortcut off.",
   "error.save_failed": "The settings could not be saved: {message}",
   "error.command_failed": "That action did not run: {message}",
@@ -185,14 +195,23 @@ const CATALOG = {
     "This desktop did not report whether pinning works here, so the request is sent without a promise.",
   "window.compact": "Compact view",
   "window.normal": "Expanded view",
+  "window.float": "Floating compact view",
+  "window.unfloat": "Leave the floating view",
+  "window.float.unavailable": "This desktop cannot float the window: {reason}",
+  "window.restore_position": "Reset window position",
   "window.restored": "The window was restored.",
+  "float.enabled": "The floating view request was accepted.",
+  "float.disabled": "The window is back to its normal size.",
+  "float.request_sent":
+    "The floating request was sent. Your desktop decides whether the window stays compact and above the other windows.",
 
   "help.title": "Keyboard shortcuts",
   "help.intro":
     "Shortcuts work while the timer window has focus. They are ignored while you type in a field.",
   "help.column.action": "Action",
   "help.column.keys": "Keys",
-  "help.note": "Primary is Command on macOS and Ctrl elsewhere.",
+  "help.note":
+    "Primary is Command on macOS and Ctrl elsewhere. Change a binding under Settings, Shortcuts.",
   "help.about_button": "About Deepwork Clock",
 
   "about.title": "About Deepwork Clock",
@@ -215,6 +234,8 @@ const CATALOG = {
   "announce.idle": "Ready. {phase} is set for {duration}.",
   "announce.recovery": "An unfinished session was found. Choose resume or discard.",
   "announce.remaining": "{phase}: {duration} remaining.",
+  "announce.float_on": "Floating view on. The window is compact and asked to stay above the other windows.",
+  "announce.float_off": "Floating view off. The window is back to its normal size.",
 
   "error.connection_title": "The timer service is not available",
   "error.warnings_failed": "The warnings could not be read: {message}",

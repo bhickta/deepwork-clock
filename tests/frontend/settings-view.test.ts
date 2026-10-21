@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SettingsView, isShortcutPattern } from "../../src/settings-view";
 import type { Settings, Theme } from "../../src/contract";
+import { SHORTCUTS } from "../../src/shortcuts";
 import { makeSettings } from "./helpers/fake-bridge";
 
 interface Harness {
@@ -187,6 +188,117 @@ describe("SettingsView", () => {
     guardButtons?.[1]?.click();
     await closing;
     expect(harness.view.isDirty).toBe(false);
+  });
+});
+
+describe("local shortcut remapping", () => {
+  function chord(init: KeyboardEventInit): KeyboardEvent {
+    return new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
+  }
+
+  async function submit(): Promise<void> {
+    field<HTMLFormElement>(".settings-form").dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true })
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  it("lists every shortcut with its default binding", () => {
+    const harness = build();
+    harness.view.open(makeSettings());
+
+    for (const spec of SHORTCUTS) {
+      expect(document.querySelector(`#shortcut-${spec.id}`)).not.toBeNull();
+    }
+    expect(field<HTMLInputElement>("#shortcut-reset").value).toBe("Ctrl+Shift+R");
+    expect(field<HTMLInputElement>("#shortcut-help").value).toBe("F1");
+  });
+
+  it("records a normalized chord and saves it with the settings", async () => {
+    const harness = build();
+    harness.view.open(makeSettings());
+
+    const input = field<HTMLInputElement>("#shortcut-reset");
+    input.dispatchEvent(chord({ key: "K", ctrlKey: true, shiftKey: true }));
+    expect(input.value).toBe("Ctrl+Shift+K");
+    expect(harness.view.isDirty).toBe(true);
+
+    await submit();
+    expect(harness.saved).toHaveLength(1);
+    expect(harness.saved[0]?.localShortcuts).toEqual({ reset: "Ctrl+Shift+K" });
+  });
+
+  it("rejects a duplicate and keeps the previous binding", async () => {
+    const harness = build();
+    harness.view.open(makeSettings());
+
+    const input = field<HTMLInputElement>("#shortcut-reset");
+    input.dispatchEvent(chord({ key: "N", ctrlKey: true, shiftKey: true }));
+
+    expect(input.value).toBe("Ctrl+Shift+R");
+    const error = field<HTMLElement>("#shortcut-reset-error");
+    expect(error.hasAttribute("hidden")).toBe(false);
+    expect(error.textContent).toContain("already used");
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+
+    await submit();
+    expect(harness.saved[0]?.localShortcuts).toEqual({});
+  });
+
+  it("rejects a modifier-less letter and Escape clears the error", () => {
+    const harness = build();
+    harness.view.open(makeSettings());
+
+    const input = field<HTMLInputElement>("#shortcut-reset");
+    input.dispatchEvent(chord({ key: "M" }));
+    expect(input.value).toBe("Ctrl+Shift+R");
+    const error = field<HTMLElement>("#shortcut-reset-error");
+    expect(error.textContent).toContain("Ctrl, Cmd or Alt");
+
+    input.dispatchEvent(chord({ key: "Escape" }));
+    expect(error.hasAttribute("hidden")).toBe(true);
+    expect(input.getAttribute("aria-invalid")).toBeNull();
+  });
+
+  it("clears an override with Backspace and falls back to the default", async () => {
+    const harness = build();
+    harness.view.open(makeSettings({ localShortcuts: { next: "Ctrl+Alt+N" } }));
+
+    const input = field<HTMLInputElement>("#shortcut-next");
+    expect(input.value).toBe("Ctrl+Alt+N");
+
+    input.dispatchEvent(chord({ key: "Backspace" }));
+    expect(input.value).toBe("Ctrl+Shift+N");
+
+    await submit();
+    expect(harness.saved[0]?.localShortcuts).toEqual({});
+  });
+
+  it("resets one row and every row", async () => {
+    const harness = build();
+    harness.view.open(
+      makeSettings({ localShortcuts: { reset: "Ctrl+Alt+R", next: "Ctrl+Alt+N" } })
+    );
+
+    field<HTMLElement>('[data-action="shortcut-reset-reset"]').click();
+    expect(field<HTMLInputElement>("#shortcut-reset").value).toBe("Ctrl+Shift+R");
+    expect(field<HTMLInputElement>("#shortcut-next").value).toBe("Ctrl+Alt+N");
+
+    field<HTMLElement>('[data-action="shortcuts-reset-all"]').click();
+    expect(field<HTMLInputElement>("#shortcut-next").value).toBe("Ctrl+Shift+N");
+
+    await submit();
+    expect(harness.saved[0]?.localShortcuts).toEqual({});
+  });
+
+  it("ignores an unreadable stored override and never drops the default", async () => {
+    const harness = build();
+    harness.view.open(makeSettings({ localShortcuts: { next: "N" } }));
+
+    expect(field<HTMLInputElement>("#shortcut-next").value).toBe("Ctrl+Shift+N");
+
+    await submit();
+    expect(harness.saved[0]?.localShortcuts).toEqual({});
   });
 });
 

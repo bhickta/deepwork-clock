@@ -52,6 +52,28 @@ describe("parseSettings", () => {
   it("refuses an unknown theme", () => {
     expect(() => parseSettings({ ...makeSettings(), theme: "neon" })).toThrow(ContractError);
   });
+
+  it("reads the local shortcut overrides", () => {
+    const settings = parseSettings(
+      makeSettings({ localShortcuts: { next: "Ctrl+Alt+N" } })
+    );
+    expect(settings.localShortcuts).toEqual({ next: "Ctrl+Alt+N" });
+  });
+
+  it("treats a missing override map as no overrides", () => {
+    const raw: Record<string, unknown> = { ...makeSettings() };
+    delete raw["localShortcuts"];
+    expect(parseSettings(raw).localShortcuts).toEqual({});
+  });
+
+  it("refuses an override that is not a string or is too long", () => {
+    expect(() =>
+      parseSettings({ ...makeSettings(), localShortcuts: { next: 3 } })
+    ).toThrow(ContractError);
+    expect(() =>
+      parseSettings({ ...makeSettings(), localShortcuts: { next: "x".repeat(65) } })
+    ).toThrow(ContractError);
+  });
 });
 
 describe("parseCapabilities", () => {

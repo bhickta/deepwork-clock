@@ -784,6 +784,58 @@
   text-align: right;
 }
 
+/* Shortcut remapping ----------------------------------------------------- */
+
+.shortcuts-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.shortcut-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(7.5rem, 11rem) auto;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.shortcut-row__label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.shortcut-row__input {
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.shortcut-row__reset {
+  min-width: 0;
+}
+
+.shortcut-row .field__error {
+  grid-column: 1 / -1;
+}
+
+.shortcuts-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+@media (max-width: 34rem) {
+  .shortcut-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .shortcut-row__label {
+    grid-column: 1 / -1;
+  }
+}
+
 /* Settings form ---------------------------------------------------------- */
 
 .settings-form {
