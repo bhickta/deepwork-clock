@@ -13,6 +13,9 @@ pub mod shortcut;
 pub mod tray;
 pub mod window;
 
+#[cfg(target_os = "linux")]
+pub mod wm;
+
 /// Whether the session runs on Wayland.
 ///
 /// Wayland does not give ordinary applications global window placement or

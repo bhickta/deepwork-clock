@@ -78,6 +78,11 @@ the manual screen-reader matrix has not been completed.
 
 ### Fixed
 
+- Floating mode on i3, Regolith and sway. A tiling window manager ignores the
+  compact size while the window is tiled, so the app now asks the window
+  manager over its IPC socket to float the window first. The floating state is
+  persisted with settings, so a restart restores a floating compact window
+  instead of a tiled one. i3 may still ignore always-on-top.
 - Launching from a desktop application menu on Linux. The installed
   `.desktop` file is now named `deepwork-clock.desktop`; the previous name
   contained a space, which made GIO's systemd launcher look for an executable

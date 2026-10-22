@@ -76,6 +76,14 @@ pub fn run() {
             // monitors, before tracking later moves and resizes.
             platform::window::restore_placement(&handle);
             platform::window::install_placement_tracking(&handle);
+            let layout = service.settings();
+            if let Err(error) = platform::window::restore_layout(
+                &handle,
+                matches!(layout.view_mode, deepwork_core::ViewMode::Compact),
+                layout.floating,
+            ) {
+                service.report_warning(error);
+            }
 
             // The tray is optional. When the desktop does not accept a tray
             // icon the application keeps working and the window stays the

@@ -226,6 +226,7 @@ export class App {
       this.applyThemeSettings();
       this.updateHelpShortcuts();
       this.applyCapabilities();
+      this.pinned = settings.floating;
       this.applyViewMode(settings.viewMode);
       const snapshot = await this.bridge.getSnapshot();
       this.applySnapshot(snapshot);
@@ -1337,13 +1338,16 @@ export class App {
    */
   private async rememberViewMode(): Promise<void> {
     const settings = this.settings;
-    if (!settings || settings.viewMode === this.viewMode) {
+    if (
+      !settings ||
+      (settings.viewMode === this.viewMode && settings.floating === this.isFloating())
+    ) {
       return;
     }
     try {
       this.settings = await this.bridge.saveSettings({
         expectedSettingsRevision: settings.revision,
-        settings: { ...settings, viewMode: this.viewMode }
+        settings: { ...settings, viewMode: this.viewMode, floating: this.isFloating() }
       });
     } catch {
       // Another save may have won the revision race. The layout stays as the
@@ -1406,6 +1410,7 @@ export class App {
       await this.bridge.windowAction(this.pinned ? "unpin" : "pin");
       this.pinned = !this.pinned;
       this.updateWindowControls();
+      void this.rememberViewMode();
       if (state === "unknown") {
         // The request was sent, but the desktop owns the result: a
         // compositor may ignore it and the frontend cannot know.

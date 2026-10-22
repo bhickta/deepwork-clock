@@ -185,4 +185,30 @@ describe("floating view", () => {
     expect(bridge.windowActions).toEqual(["compact"]);
     expect(bridge.savedSettings.at(-1)?.settings.viewMode).toBe("compact");
   });
+
+  it("restores a floating window as pressed compact and pinned", async () => {
+    const bridge = new FakeBridge({
+      settings: { viewMode: "compact", floating: true }
+    });
+    const root = await mount(bridge);
+
+    expect(root.getAttribute("data-view")).toBe("compact");
+    expect(query(root, '[data-action="float"]').getAttribute("aria-pressed")).toBe("true");
+    expect(query(root, '[data-action="pin"]').getAttribute("aria-pressed")).toBe("true");
+    expect(bridge.windowActions).toEqual([]);
+  });
+
+  it("remembers that a pin toggle ended the floating state", async () => {
+    const bridge = new FakeBridge({
+      settings: { viewMode: "compact", floating: true }
+    });
+    const root = await mount(bridge);
+
+    query(root, '[data-action="pin"]').click();
+    await flush();
+    await flush();
+
+    expect(bridge.windowActions).toEqual(["unpin"]);
+    expect(bridge.savedSettings.at(-1)?.settings.floating).toBe(false);
+  });
 });

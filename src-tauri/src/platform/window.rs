@@ -14,9 +14,7 @@ use deepwork_core::BridgeError;
 
 use super::placement;
 
-// Called from `lib.rs` setup. That file belongs to the integrator, so the
-// re-export is unused until the wiring lands.
-#[allow(unused_imports)]
+// Called from `lib.rs` setup.
 pub use super::placement::{install_placement_tracking, restore_placement};
 
 /// Label of the only window of the application.
@@ -139,16 +137,20 @@ pub fn apply<R: Runtime>(app: &AppHandle<R>, action: WindowAction) -> Result<(),
             if support == PinSupport::Unavailable {
                 return Err(BridgeError::unsupported(reason));
             }
+            // Ask a tiling window manager to float the window *before* the
+            // size request: a tiled window ignores the size.
+            request_floating_layout(true);
             set_size(&window, COMPACT_WIDTH, COMPACT_HEIGHT)?;
             window.set_always_on_top(true).map_err(|error| {
                 BridgeError::internal(format!("Could not float the window. {error}"))
             })?;
         }
         WindowAction::Unfloat => {
-            set_size(&window, NORMAL_WIDTH, NORMAL_HEIGHT)?;
             window.set_always_on_top(false).map_err(|error| {
                 BridgeError::internal(format!("Could not unfloat the window. {error}"))
             })?;
+            request_floating_layout(false);
+            set_size(&window, NORMAL_WIDTH, NORMAL_HEIGHT)?;
         }
         WindowAction::Restore => {
             // "Restore defaults": forget an invalid remembered rectangle,
@@ -165,6 +167,51 @@ pub fn apply<R: Runtime>(app: &AppHandle<R>, action: WindowAction) -> Result<(),
         }
     }
     Ok(())
+}
+
+/// Applies the remembered layout after placement recovery.
+///
+/// A floating window is restored as a floating compact window. Without this,
+/// a tiling window manager would reopen the window tiled and ignore the saved
+/// compact size.
+pub fn restore_layout<R: Runtime>(
+    app: &AppHandle<R>,
+    compact: bool,
+    floating: bool,
+) -> Result<(), BridgeError> {
+    let window = app
+        .get_webview_window(MAIN_WINDOW_LABEL)
+        .ok_or_else(|| BridgeError::invalid_state("The timer window is not available."))?;
+    if floating {
+        request_floating_layout(true);
+        set_size(&window, COMPACT_WIDTH, COMPACT_HEIGHT)?;
+        window.set_always_on_top(true).map_err(|error| {
+            BridgeError::internal(format!("Could not restore the floating window. {error}"))
+        })?;
+    } else {
+        let (width, height) = if compact {
+            (COMPACT_WIDTH, COMPACT_HEIGHT)
+        } else {
+            (NORMAL_WIDTH, NORMAL_HEIGHT)
+        };
+        set_size(&window, width, height)?;
+    }
+    Ok(())
+}
+
+/// Ask a tiling window manager to take the window out of the tiling layout.
+///
+/// Best effort: the window manager owns the result, and a desktop without i3
+/// or sway simply reports that no command was sent.
+fn request_floating_layout(floating: bool) {
+    #[cfg(target_os = "linux")]
+    {
+        let _ = super::wm::set_floating(floating);
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = floating;
+    }
 }
 
 /// Shows the window again and gives it the focus.

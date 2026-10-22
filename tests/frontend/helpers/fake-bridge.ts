@@ -58,6 +58,7 @@ export function makeSettings(overrides: Partial<Settings> = {}): Settings {
     historyEnabled: true,
     retentionDays: 90,
     viewMode: "normal",
+    floating: false,
     localShortcuts: {},
     ...overrides
   };

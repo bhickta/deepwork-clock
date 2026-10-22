@@ -30,8 +30,9 @@ pub use history::{
 pub use recovery::RecoveryRecord;
 pub use service::TimerService;
 pub use settings::{
-    validate_config, Settings, Theme, MAX_DURATION_MS, MAX_LABEL_CHARS, MAX_RETENTION_DAYS,
-    MAX_TEXT_SCALE, MIN_DURATION_MS, MIN_RETENTION_DAYS, MIN_TEXT_SCALE, SETTINGS_SCHEMA_VERSION,
+    validate_config, Settings, Theme, ViewMode, MAX_DURATION_MS, MAX_LABEL_CHARS,
+    MAX_RETENTION_DAYS, MAX_TEXT_SCALE, MIN_DURATION_MS, MIN_RETENTION_DAYS, MIN_TEXT_SCALE,
+    SETTINGS_SCHEMA_VERSION,
 };
 pub use storage::{
     quarantine_file, read_limited, write_atomic, StorageError, MAX_HISTORY_BYTES,

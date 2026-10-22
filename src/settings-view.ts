@@ -1047,6 +1047,7 @@ export class SettingsView {
       historyEnabled: this.historyEnabled.input.checked,
       retentionDays: retentionValue,
       viewMode: base.viewMode,
+      floating: base.floating,
       // Only usable overrides that differ from the default are stored.
       localShortcuts: normalizeLocalShortcuts(this.localShortcuts, this.isMac)
     };

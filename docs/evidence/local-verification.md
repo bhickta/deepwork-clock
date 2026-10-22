@@ -118,3 +118,25 @@ window-manager-rule test.
   `deepwork-clock_0.1.0-alpha.1_amd64.deb` (2.5 MB) containing
   `deepwork-clock.desktop` with no space in the file name. It was **not**
   installed during this wave.
+
+### i3 floating verification (installed build, 2026-10-22)
+
+The installed release package was exercised on the owner's i3/Regolith X11
+session without a test harness. The window starts in the saved layout, then
+the Floating button was used:
+
+- Before: `i3-msg -t get_tree` reported `floating: auto_off`, rect 953×1045
+  (tiled), because i3 ignores a size request for a tiled window.
+- After Floating: `floating: user_on`, rect 324×204, and the settings file
+  recorded `viewMode: compact`, `floating: true`.
+- Restart: the window reopened `user_on` at 324×204, i.e. the saved floating
+  compact layout was restored.
+- Unfloat: `floating: user_off`, rect 953×1045, settings reset to
+  `viewMode: normal`, `floating: false`.
+- `_NET_WM_STATE` contained only `_NET_WM_STATE_FOCUSED`; i3 did not report
+  the always-on-top request as `_NET_WM_STATE_ABOVE`. "Above other windows" is
+  therefore still window-manager dependent and is not claimed as verified.
+
+The app now asks i3/sway over the IPC socket (`I3SOCK`/`SWAYSOCK`) to float the
+window before applying the compact size. The desktop rule in the README is only
+needed for an always-floating preference.

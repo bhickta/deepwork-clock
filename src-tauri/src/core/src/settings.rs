@@ -116,6 +116,8 @@ pub struct Settings {
     pub retention_days: u32,
     /// The window layout that was last in use.
     pub view_mode: ViewMode,
+    /// Whether the compact window was also floating above other windows.
+    pub floating: bool,
     /// Moves to the next phase automatically after a phase completes while the
     /// application is awake. Off by default, because an automatic cycle has to
     /// be an explicit decision.
@@ -143,6 +145,7 @@ impl Default for Settings {
             history_enabled: true,
             retention_days: 90,
             view_mode: ViewMode::Normal,
+            floating: false,
             auto_advance: false,
             sound_volume: DEFAULT_SOUND_VOLUME,
             local_shortcuts: BTreeMap::new(),
@@ -286,6 +289,7 @@ mod tests {
         assert_eq!(settings.sound_volume, DEFAULT_SOUND_VOLUME);
         assert!(settings.local_shortcuts.is_empty());
         assert_eq!(settings.view_mode, ViewMode::Normal);
+        assert!(!settings.floating);
     }
 
     #[test]
@@ -320,6 +324,8 @@ mod tests {
         assert!(!settings.auto_advance);
         assert_eq!(settings.sound_volume, DEFAULT_SOUND_VOLUME);
         assert!(settings.local_shortcuts.is_empty());
+        assert_eq!(settings.view_mode, ViewMode::Normal);
+        assert!(!settings.floating);
         assert!(settings.validate().is_ok());
     }
 

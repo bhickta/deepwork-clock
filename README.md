@@ -102,19 +102,22 @@ not proof of compatibility with every distribution.
 
 ### Linux desktops: i3, Regolith and Wayland
 
-Tiling window managers, including i3 and Regolith, ignore the requested window
-size unless the window is allowed to float. To make the requested compact size
-effective, add this rule to your i3 configuration and reload it
-(`i3-msg reload`):
+Tiling window managers, including i3 and Regolith, ignore a requested window
+size while the window is tiled. The **Floating** action asks i3 (or sway) over
+its IPC socket to float the window before applying the compact size, so the
+button works without extra configuration on those desktops. When the IPC
+socket is unavailable, the window manager still owns the result.
+
+If you prefer the timer to be floating for every launch, add this rule to your
+i3 configuration and reload it (`i3-msg reload`):
 
 ```
-for_window [class="deepwork-clock"] floating enable
+for_window [class="Deepwork-clock"] floating enable
 ```
 
-Regolith's i3 session uses i3 underneath, so the same rule applies there. The
-project does not itself apply or test desktop rules; without one, the window
-manager decides the size. Whether a floating window stays above other
-applications is still up to the window manager.
+Regolith's i3 session uses i3 underneath, so the same rule applies there.
+Whether a floating window stays above other applications is still up to the
+window manager: i3 may ignore the always-on-top request.
 
 On Wayland the compositor owns window placement and keep-above. The app reports
 floating and pinning as unavailable there, and a saved position is a hint at

@@ -105,6 +105,8 @@ export interface Settings {
   retentionDays: number;
   /** The window layout that was last in use. */
   viewMode: ViewMode;
+  /** The compact window was also floating above other windows. */
+  floating: boolean;
   /** Local shortcut overrides, keyed by shortcut id. Empty means defaults. */
   localShortcuts: Record<string, string>;
 }
@@ -346,6 +348,7 @@ export function parseSettings(raw: unknown): Settings {
     historyEnabled: requireBoolean(record, "historyEnabled"),
     retentionDays: requireNonNegativeInteger(record, "retentionDays"),
     viewMode: requireEnum(record, "viewMode", VIEW_MODES),
+    floating: requireBoolean(record, "floating"),
     localShortcuts: parseLocalShortcuts(record["localShortcuts"])
   };
 }

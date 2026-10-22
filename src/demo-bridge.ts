@@ -51,6 +51,7 @@ function defaultSettings(): Settings {
     historyEnabled: true,
     retentionDays: 90,
     viewMode: "normal",
+    floating: false,
     localShortcuts: {}
   };
 }
