@@ -140,3 +140,16 @@ the Floating button was used:
 The app now asks i3/sway over the IPC socket (`I3SOCK`/`SWAYSOCK`) to float the
 window before applying the compact size. The desktop rule in the README is only
 needed for an always-floating preference.
+
+### Session naming and Markdown sync (2026-10-22)
+
+- Frontend: `npm test -- --run` -> 13 files, 190 tests passed, including fuzzy
+  ranking, keyboard selection, commit-on-blur, name persistence, folder
+  selection, relative-path rejection and sync summaries.
+- Rust: 73 application/service tests (one new sync round trip: write from one
+  profile, import into a second profile), 69 desktop-free core tests (Markdown
+  render/parse round trip, unsafe ids, malformed files, missing folder).
+- Clippy `-D warnings`, rustfmt and `npm run build` clean.
+- The native folder picker and a real sync against a git checkout were not
+  exercised in this wave. The file behaviour is unit-tested against temporary
+  directories only.

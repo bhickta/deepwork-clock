@@ -171,6 +171,8 @@ pub fn run() {
             commands::window_action,
             commands::list_history,
             commands::export_history,
+            commands::choose_sync_directory,
+            commands::sync_sessions,
             commands::delete_history,
             commands::confirm_history,
         ]);

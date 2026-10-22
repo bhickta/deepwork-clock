@@ -83,3 +83,17 @@ working tree. Documentation edits in this step are uncommitted.
   real desktop, screen readers, or any Windows/macOS runtime behaviour.
 
 The first release must remain an unsigned alpha. Do not rename it production-ready or silently mark the pending cards complete. Resume future implementation at the pending card relevant to the next product milestone, retaining the tests and contracts already delivered.
+
+## Implementation wave 3
+
+- 2026-10-22: Optional session names in the main view with fuzzy suggestions
+  from earlier labels. The name is stored with the phase and written into its
+  Markdown log.
+- 2026-10-22: Git-friendly session logs. A chosen folder (normally a git
+  checkout) receives one Markdown file per phase under `deepwork-sessions/`;
+  a sync pass writes missing files and imports unknown session ids. The app
+  never runs git; commit/push stay manual.
+- Checks: 13 frontend files / 190 tests, 73 application tests, 69 desktop-free
+  core tests, Clippy and rustfmt clean, production build passed.
+- Not verified: the native folder picker and a real sync against a git
+  checkout. These paths are unit-tested with temporary directories only.

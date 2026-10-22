@@ -13,6 +13,11 @@ the manual screen-reader matrix has not been completed.
 
 ### Added
 
+- Optional session names in the main view with fuzzy suggestions from earlier
+  sessions, stored with the phase and written into its Markdown log.
+- Git-friendly session logs: one Markdown file per phase under
+  `deepwork-sessions/` in a chosen folder, with import/merge by session id.
+  The app manages files only; committing and pushing stay with the user.
 - Countdown mode (1 second to 24 hours) and focus cycle mode (50/10 by
   default, long break after four completed focus phases).
 - Timer actions: start, pause, resume, reset, skip, end, with confirmation

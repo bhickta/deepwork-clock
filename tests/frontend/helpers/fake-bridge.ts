@@ -8,6 +8,7 @@ import type {
   SaveSettingsRequest,
   Settings,
   Snapshot,
+  SyncSummary,
   TimerCommandRequest,
   WindowAction
 } from "../../../src/contract";
@@ -57,6 +58,7 @@ export function makeSettings(overrides: Partial<Settings> = {}): Settings {
     closeToTray: false,
     historyEnabled: true,
     retentionDays: 90,
+    syncDirectory: "",
     viewMode: "normal",
     floating: false,
     localShortcuts: {},
@@ -167,6 +169,26 @@ export class FakeBridge implements Bridge {
   readonly confirmed: string[] = [];
 
   deleteCalls = 0;
+
+  /** What the folder picker returns; null stands for a cancelled picker. */
+  chosenSyncDirectory: string | null = null;
+
+  chooseSyncDirectoryCalls = 0;
+
+  /** The stand-in result of a sync pass. */
+  syncSummary: SyncSummary = {
+    directory: "",
+    files: 0,
+    written: 0,
+    imported: 0,
+    rejected: 0
+  };
+
+  syncCalls = 0;
+
+  syncError: unknown = null;
+
+  chooseSyncDirectoryError: unknown = null;
 
   exportResult: string | null = "/tmp/history.csv";
 
@@ -283,6 +305,24 @@ export class FakeBridge implements Bridge {
     if (record) {
       record.confirmed = true;
     }
+  }
+
+  async chooseSyncDirectory(): Promise<string | null> {
+    this.calls.push("chooseSyncDirectory");
+    this.chooseSyncDirectoryCalls += 1;
+    if (this.chooseSyncDirectoryError) {
+      throw this.chooseSyncDirectoryError;
+    }
+    return this.chosenSyncDirectory;
+  }
+
+  async syncSessions(): Promise<SyncSummary> {
+    this.calls.push("syncSessions");
+    this.syncCalls += 1;
+    if (this.syncError) {
+      throw this.syncError;
+    }
+    return { ...this.syncSummary };
   }
 
   async subscribeSnapshot(listener: (snapshot: Snapshot) => void): Promise<() => void> {

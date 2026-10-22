@@ -17,6 +17,7 @@ import {
   parseRecoveryCheckpoint,
   parseSettings,
   parseSnapshot,
+  parseSyncSummary,
   type AppError,
   type Capabilities,
   type ExportFormat,
@@ -25,6 +26,7 @@ import {
   type SaveSettingsRequest,
   type Settings,
   type Snapshot,
+  type SyncSummary,
   type TimerCommandRequest,
   type WindowAction
 } from "./contract";
@@ -50,6 +52,10 @@ export interface Bridge {
   exportHistory(format: ExportFormat): Promise<string | null>;
   deleteHistory(): Promise<void>;
   confirmHistory(phaseId: string): Promise<void>;
+  /** Open a native folder picker. Returns null when the user cancels. */
+  chooseSyncDirectory(): Promise<string | null>;
+  /** Write and import the Markdown session files in the chosen folder. */
+  syncSessions(): Promise<SyncSummary>;
   /** Subscribe to published snapshots. Returns an unsubscribe function. */
   subscribeSnapshot(listener: (snapshot: Snapshot) => void): Promise<() => void>;
   /** Subscribe to warnings. Returns an unsubscribe function. */
@@ -161,6 +167,18 @@ export function createNativeBridge(): Bridge {
 
     async confirmHistory(phaseId: string): Promise<void> {
       await invoke("confirm_history", { phaseId });
+    },
+
+    async chooseSyncDirectory(): Promise<string | null> {
+      const result = await invoke("choose_sync_directory");
+      if (typeof result === "string") {
+        return result;
+      }
+      return null;
+    },
+
+    async syncSessions(): Promise<SyncSummary> {
+      return parseSyncSummary(await invoke("sync_sessions"));
     },
 
     async subscribeSnapshot(listener: (snapshot: Snapshot) => void): Promise<() => void> {

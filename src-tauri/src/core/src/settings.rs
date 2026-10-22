@@ -118,6 +118,11 @@ pub struct Settings {
     pub view_mode: ViewMode,
     /// Whether the compact window was also floating above other windows.
     pub floating: bool,
+    /// Folder kept in a git repository for cross-computer session logs.
+    ///
+    /// Empty means that session sync is switched off. The folder must exist;
+    /// the app writes only inside its `deepwork-sessions` subfolder.
+    pub sync_directory: String,
     /// Moves to the next phase automatically after a phase completes while the
     /// application is awake. Off by default, because an automatic cycle has to
     /// be an explicit decision.
@@ -146,6 +151,7 @@ impl Default for Settings {
             retention_days: 90,
             view_mode: ViewMode::Normal,
             floating: false,
+            sync_directory: String::new(),
             auto_advance: false,
             sound_volume: DEFAULT_SOUND_VOLUME,
             local_shortcuts: BTreeMap::new(),
@@ -194,6 +200,18 @@ impl Settings {
             )));
         }
         validate_local_shortcuts(&self.local_shortcuts)?;
+        if !self.sync_directory.is_empty() {
+            if self.sync_directory.len() > 4096 || self.sync_directory.contains('\0') {
+                return Err(BridgeError::invalid_state(
+                    "The sync folder path is too long or contains an invalid character.",
+                ));
+            }
+            if !std::path::Path::new(&self.sync_directory).is_absolute() {
+                return Err(BridgeError::invalid_state(
+                    "The sync folder must be an absolute path.",
+                ));
+            }
+        }
         validate_config(&self.config)
     }
 
@@ -347,6 +365,26 @@ mod tests {
         };
         let error = too_loud.validate().expect_err("too loud");
         assert_eq!(error.code, CODE_INVALID_STATE);
+    }
+
+    #[test]
+    fn the_sync_folder_must_be_an_absolute_path_or_empty() {
+        assert!(Settings::default().validate().is_ok());
+
+        let absolute = Settings {
+            sync_directory: "/home/user/deepwork-log".to_string(),
+            ..Settings::default()
+        };
+        assert!(absolute.validate().is_ok());
+
+        let relative = Settings {
+            sync_directory: "relative/log".to_string(),
+            ..Settings::default()
+        };
+        assert_eq!(
+            relative.validate().expect_err("relative").code,
+            CODE_INVALID_STATE
+        );
     }
 
     #[test]

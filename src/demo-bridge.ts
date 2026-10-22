@@ -18,6 +18,7 @@ import {
   type Settings,
   type Snapshot,
   type Status,
+  type SyncSummary,
   type TimerConfig,
   type TimerCommandRequest
 } from "./contract";
@@ -50,6 +51,7 @@ function defaultSettings(): Settings {
     closeToTray: false,
     historyEnabled: true,
     retentionDays: 90,
+    syncDirectory: "",
     viewMode: "normal",
     floating: false,
     localShortcuts: {}
@@ -321,6 +323,27 @@ class DemoBackend {
 
   deleteHistory(): void {
     this.history = [];
+  }
+
+  /** The preview cannot open a native folder picker, so it reports a cancel. */
+  chooseSyncDirectory(): string | null {
+    return null;
+  }
+
+  /**
+   * A deterministic stand-in for a sync pass.
+   *
+   * The browser preview cannot read or write the folder, so it reports that
+   * nothing was written and nothing was imported.
+   */
+  syncSessions(): SyncSummary {
+    return {
+      directory: this.settings.syncDirectory,
+      files: 0,
+      written: 0,
+      imported: 0,
+      rejected: 0
+    };
   }
 
   subscribe(listener: (snapshot: Snapshot) => void): () => void {
@@ -637,6 +660,14 @@ export function createDemoBridge(
 
     async confirmHistory(phaseId: string): Promise<void> {
       backend.confirmHistory(phaseId);
+    },
+
+    async chooseSyncDirectory(): Promise<string | null> {
+      return backend.chooseSyncDirectory();
+    },
+
+    async syncSessions(): Promise<SyncSummary> {
+      return backend.syncSessions();
     },
 
     async subscribeSnapshot(listener: (snapshot: Snapshot) => void): Promise<() => void> {

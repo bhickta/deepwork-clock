@@ -11,6 +11,9 @@ export const SETTINGS_SCHEMA_VERSION = 1;
 /** The longest accepted value of one local shortcut override. */
 export const MAX_LOCAL_SHORTCUT_LENGTH = 64;
 
+/** The longest accepted sync folder path. */
+export const MAX_SYNC_DIRECTORY_LENGTH = 4096;
+
 export type Mode = "countdown" | "cycle";
 export type Phase = "focus" | "short_break" | "long_break";
 export type Status = "idle" | "running" | "paused" | "completed" | "recovery_pending";
@@ -103,12 +106,34 @@ export interface Settings {
   closeToTray: boolean;
   historyEnabled: boolean;
   retentionDays: number;
+  /**
+   * The folder kept in a git repository for cross-computer session logs.
+   *
+   * Empty switches session sync off. A non-empty value must be an absolute
+   * path; the backend refuses a relative one.
+   */
+  syncDirectory: string;
   /** The window layout that was last in use. */
   viewMode: ViewMode;
   /** The compact window was also floating above other windows. */
   floating: boolean;
   /** Local shortcut overrides, keyed by shortcut id. Empty means defaults. */
   localShortcuts: Record<string, string>;
+}
+
+/**
+ * What one sync pass did.
+ *
+ * `files` counts the Markdown files found in `deepwork-sessions`, `written` the
+ * new files written from the local history, `imported` the foreign records
+ * added to it and `rejected` the files skipped because they were malformed.
+ */
+export interface SyncSummary {
+  directory: string;
+  files: number;
+  written: number;
+  imported: number;
+  rejected: number;
 }
 
 export interface Capability {
@@ -322,6 +347,23 @@ export function parseLocalShortcuts(raw: unknown): Record<string, string> {
   return result;
 }
 
+/**
+ * Read a string that may be missing from an older document.
+ *
+ * A missing value is empty, so an older settings file without a field keeps
+ * working. A value of the wrong type is still refused.
+ */
+function stringOrEmpty(record: Record<string, unknown>, key: string): string {
+  const value = record[key];
+  if (value === undefined || value === null) {
+    return "";
+  }
+  if (typeof value !== "string") {
+    throw new ContractError(`Expected "${key}" to be a string.`);
+  }
+  return value;
+}
+
 /** Validate and narrow the settings document. */
 export function parseSettings(raw: unknown): Settings {
   const record = asRecord(raw, "settings");
@@ -347,9 +389,22 @@ export function parseSettings(raw: unknown): Settings {
     closeToTray: requireBoolean(record, "closeToTray"),
     historyEnabled: requireBoolean(record, "historyEnabled"),
     retentionDays: requireNonNegativeInteger(record, "retentionDays"),
+    syncDirectory: stringOrEmpty(record, "syncDirectory"),
     viewMode: requireEnum(record, "viewMode", VIEW_MODES),
     floating: requireBoolean(record, "floating"),
     localShortcuts: parseLocalShortcuts(record["localShortcuts"])
+  };
+}
+
+/** Validate and narrow the result of one sync pass. */
+export function parseSyncSummary(raw: unknown): SyncSummary {
+  const record = asRecord(raw, "sync summary");
+  return {
+    directory: stringOrEmpty(record, "directory"),
+    files: requireNonNegativeInteger(record, "files"),
+    written: requireNonNegativeInteger(record, "written"),
+    imported: requireNonNegativeInteger(record, "imported"),
+    rejected: requireNonNegativeInteger(record, "rejected")
   };
 }
 

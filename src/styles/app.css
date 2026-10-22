@@ -868,6 +868,12 @@
   justify-content: flex-end;
 }
 
+.sync-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
 @media (max-width: 34rem) {
   .shortcut-row {
     grid-template-columns: minmax(0, 1fr) auto;
@@ -1200,4 +1206,60 @@
   .app-footer {
     padding-inline: var(--space-3);
   }
+}
+
+/* Optional session name with fuzzy history suggestions ------------------ */
+
+.session-name {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-block-end: var(--space-1);
+}
+
+.session-name__input {
+  min-height: 2.5rem;
+  padding: var(--space-1) var(--space-3);
+  font-size: 0.9375rem;
+}
+
+.session-name__list {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-start: calc(100% + 2px);
+  z-index: 30;
+  max-height: 11rem;
+  overflow-y: auto;
+  margin: 0;
+  padding: var(--space-1);
+  list-style: none;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-md, 0 8px 24px rgb(0 0 0 / 25%));
+}
+
+.session-name__option {
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.session-name__option:hover,
+.session-name__option[aria-selected="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.session-name__hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+[data-view="compact"] .session-name {
+  display: none;
 }

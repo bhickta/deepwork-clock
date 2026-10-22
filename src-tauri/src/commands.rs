@@ -17,7 +17,7 @@ use tauri_plugin_dialog::{DialogExt, FilePath};
 
 use crate::platform;
 use crate::platform::capabilities::Capability;
-use crate::service::AppService;
+use crate::service::{AppService, SyncSummary};
 
 /// One timer command.
 ///
@@ -207,6 +207,35 @@ pub async fn export_history(
         BridgeError::storage(format!("The history could not be written. {error}"))
     })?;
     Ok(Some(path.to_string_lossy().to_string()))
+}
+
+/// Chooses the git repository folder used for cross-computer session logs.
+///
+/// `None` means that the user cancelled the dialog.
+#[tauri::command]
+pub async fn choose_sync_directory(app: AppHandle) -> Option<String> {
+    let (sender, mut receiver) = tauri::async_runtime::channel::<Option<FilePath>>(1);
+    app.dialog()
+        .file()
+        .set_title("Choose a folder for session sync")
+        .pick_folder(move |path| {
+            let sender = sender.clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = sender.send(path).await;
+            });
+        });
+    let selected = receiver.recv().await.flatten()?;
+    selected
+        .into_path()
+        .ok()
+        .map(|path| path.to_string_lossy().into_owned())
+}
+
+/// Writes local sessions as Markdown and imports sessions from other
+/// computers in the same git checkout.
+#[tauri::command]
+pub fn sync_sessions(service: State<'_, Arc<AppService>>) -> Result<SyncSummary, BridgeError> {
+    service.sync_sessions()
 }
 
 /// Removes every history entry.

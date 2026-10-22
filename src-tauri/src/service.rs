@@ -77,6 +77,22 @@ pub struct RecoveryInfo {
 
 /// Redacted diagnostics that the user can preview before sharing them.
 ///
+/// What one Markdown sync pass did.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncSummary {
+    /// The repository folder the user chose.
+    pub directory: String,
+    /// Markdown files found in `deepwork-sessions`.
+    pub files: usize,
+    /// New files written from the local history.
+    pub written: usize,
+    /// Foreign records added to the local history.
+    pub imported: usize,
+    /// Files skipped because they were malformed.
+    pub rejected: usize,
+}
+
 /// The document deliberately contains no session or phase identifiers, no
 /// label, no settings text, no absolute paths and no environment variables. It
 /// is safe to show in the About view and to copy into a bug report.
@@ -455,6 +471,45 @@ impl AppService {
         }
         self.store.save_history(&self.history_book())?;
         Ok(())
+    }
+
+    /// Writes local sessions as Markdown and imports sessions from other
+    /// computers that are already in the git checkout.
+    ///
+    /// Only the `deepwork-sessions` subfolder of the chosen repository is
+    /// touched. The folder itself must exist; the user keeps it in git.
+    pub fn sync_sessions(&self) -> Result<SyncSummary, BridgeError> {
+        let directory = self.settings().sync_directory;
+        if directory.trim().is_empty() {
+            return Err(BridgeError::invalid_state(
+                "Choose a sync folder before syncing sessions.",
+            ));
+        }
+        let outcome = deepwork_core::markdown::sync_directory(
+            std::path::Path::new(&directory),
+            &self.all_history(),
+        )
+        .map_err(BridgeError::storage)?;
+
+        let imported = {
+            let _gate = self.lock_operation_gate()?;
+            let mut inner = self.lock_inner()?;
+            let before = inner.history.len();
+            for record in outcome.parsed {
+                inner.history.upsert(record);
+            }
+            inner.history.len().saturating_sub(before)
+        };
+        if imported > 0 {
+            self.store.save_history(&self.history_book())?;
+        }
+        Ok(SyncSummary {
+            directory,
+            files: outcome.files,
+            written: outcome.written,
+            imported,
+            rejected: outcome.rejected,
+        })
     }
 
     /// The capabilities of the current machine.
@@ -1030,6 +1085,11 @@ mod tests {
         service_with_settings_path(directory, directory.join("settings.json"))
     }
 
+    /// Alias used where a local binding named `service` shadows the helper.
+    fn service_for(directory: &std::path::Path) -> Arc<AppService> {
+        service(directory)
+    }
+
     /// Builds a service whose settings document cannot be stored.
     fn service_with_blocked_settings(directory: &std::path::Path) -> Arc<AppService> {
         // A file where a directory would be needed: the write cannot succeed.
@@ -1090,6 +1150,55 @@ mod tests {
         let content = std::fs::read_to_string(&checkpoint).expect("read");
         let record: RecoveryRecord = serde_json::from_str(&content).expect("parse");
         assert_eq!(record.snapshot.revision, service.snapshot().revision);
+    }
+
+    #[test]
+    fn markdown_sync_writes_local_sessions_and_imports_foreign_ones() {
+        let directory = tempfile::tempdir().expect("config dir");
+        let repository = tempfile::tempdir().expect("sync repo");
+        let service = service(directory.path());
+
+        let mut settings = service.settings();
+        settings.sync_directory = repository.path().to_string_lossy().into_owned();
+        service
+            .save_settings(settings, service.settings().revision)
+            .expect("save sync folder");
+
+        let revision = service.snapshot().revision;
+        service
+            .apply_command(
+                Action::Configure {
+                    config: short_config(),
+                },
+                0,
+                now(),
+                Some(revision),
+            )
+            .expect("configure");
+        let revision = service.snapshot().revision;
+        service
+            .apply_command(Action::Start, 0, now(), Some(revision))
+            .expect("start");
+        service.tick(1_500, now(), 0);
+        assert_eq!(service.all_history().len(), 1);
+
+        let summary = service.sync_sessions().expect("sync");
+        assert_eq!(summary.written, 1, "{summary:?}");
+        assert_eq!(summary.files, 1);
+
+        // A second installation with the same checkout imports the file.
+        let other_directory = tempfile::tempdir().expect("other config dir");
+        let other = service_for(other_directory.path());
+        let mut other_settings = other.settings();
+        other_settings.sync_directory = repository.path().to_string_lossy().into_owned();
+        other
+            .save_settings(other_settings, other.settings().revision)
+            .expect("save sync folder");
+        assert_eq!(other.all_history().len(), 0);
+
+        let imported = other.sync_sessions().expect("import");
+        assert_eq!(imported.imported, 1, "{imported:?}");
+        assert_eq!(other.all_history().len(), 1);
     }
 
     #[test]

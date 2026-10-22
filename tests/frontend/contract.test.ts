@@ -6,7 +6,8 @@ import {
   parseCapabilities,
   parseHistoryRecords,
   parseSettings,
-  parseSnapshot
+  parseSnapshot,
+  parseSyncSummary
 } from "../../src/contract";
 import { makeHistoryRecord, makeSettings, makeSnapshot } from "./helpers/fake-bridge";
 
@@ -73,6 +74,44 @@ describe("parseSettings", () => {
     expect(() =>
       parseSettings({ ...makeSettings(), localShortcuts: { next: "x".repeat(65) } })
     ).toThrow(ContractError);
+  });
+
+  it("reads the sync folder and treats a missing one as off", () => {
+    expect(parseSettings(makeSettings({ syncDirectory: "/home/me/log" })).syncDirectory).toBe(
+      "/home/me/log"
+    );
+    const raw: Record<string, unknown> = { ...makeSettings() };
+    delete raw["syncDirectory"];
+    expect(parseSettings(raw).syncDirectory).toBe("");
+    expect(() =>
+      parseSettings({ ...makeSettings(), syncDirectory: 3 })
+    ).toThrow(ContractError);
+  });
+});
+
+describe("parseSyncSummary", () => {
+  it("reads the counts of one sync pass", () => {
+    const summary = parseSyncSummary({
+      directory: "/home/me/log",
+      files: 4,
+      written: 2,
+      imported: 3,
+      rejected: 1
+    });
+    expect(summary).toEqual({
+      directory: "/home/me/log",
+      files: 4,
+      written: 2,
+      imported: 3,
+      rejected: 1
+    });
+  });
+
+  it("refuses a negative or missing count", () => {
+    expect(() =>
+      parseSyncSummary({ directory: "", files: -1, written: 0, imported: 0, rejected: 0 })
+    ).toThrow(ContractError);
+    expect(() => parseSyncSummary({ directory: "" })).toThrow(ContractError);
   });
 });
 

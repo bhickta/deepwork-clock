@@ -136,9 +136,28 @@ const CATALOG = {
   "settings.close_to_tray": "Close to the tray instead of quitting",
   "settings.history_enabled": "Keep session history",
   "settings.retention_days": "Keep history for {count} days",
+  "settings.sync": "Session sync",
+  "settings.sync.directory": "Sync folder",
+  "settings.sync.directory_hint":
+    "Must be a folder inside a git repository. Leave it empty to switch session sync off. If the folder is missing, Sync now reports it.",
+  "settings.sync.choose": "Choose folder…",
+  "settings.sync.now": "Sync now",
+  "settings.sync.running": "Syncing sessions…",
+  "settings.sync.note":
+    "One Markdown file per session is written to deepwork-sessions/ inside the folder. Commit and push on one computer, pull on the other, then sync again. The app never runs git itself. Sync now uses the folder that was saved.",
+  "settings.sync.summary": "Wrote {written} new files and imported {imported} sessions from this folder.",
+  "settings.sync.summary_rejected":
+    "Wrote {written} new files and imported {imported} sessions from this folder. {rejected} files were skipped.",
   "settings.next_session_note":
     "These settings are saved now and are used from the next session. The running phase keeps its current configuration.",
   "settings.saved": "Settings saved.",
+  "session.name.label": "Session name",
+  "session.name.placeholder": "Name this session (optional)",
+  "session.name.suggestions": "Previous session names",
+  "session.name.hint":
+    "Saved with the session and its Markdown log. Type to reuse a past name.",
+  "session.name.saved": "Session name set to {name}.",
+  "session.name.cleared": "Session name cleared.",
   "settings.capability.available": "Available on this computer.",
   "settings.capability.unavailable": "Your desktop does not support this option.",
   "settings.capability.permission_required": "This option needs permission before it can be used.",
@@ -158,6 +177,12 @@ const CATALOG = {
   "error.invalid_interval": "Choose between 1 and 12 focus phases.",
   "error.invalid_text_scale": "Choose a text size between 100% and 200%.",
   "error.invalid_retention": "Choose a retention period between 1 and 3650 days.",
+  "error.invalid_sync_directory":
+    "Enter an absolute folder path, such as /home/you/sync. Leave it empty to switch sync off.",
+  "error.sync_directory_too_long": "Choose a folder path of at most {max} characters.",
+  "error.sync_failed": "The session sync failed: {message}",
+  "error.choose_sync_directory_failed": "The folder could not be chosen: {message}",
+  "error.unknown_failure": "The desktop app did not explain the failure.",
   "error.invalid_shortcut": "Use a combination such as CommandOrControl+Alt+Shift+Space.",
   "error.shortcut_duplicate": "That combination is already used by another action.",
   "error.shortcut_bare": "Use Ctrl, Cmd or Alt, or a function key from F1 to F12.",

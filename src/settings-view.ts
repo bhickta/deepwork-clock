@@ -8,8 +8,8 @@ import {
   MAX_RETENTION_DAYS,
   parseDurationParts
 } from "./format";
-import type { Capabilities, Settings, Theme, TimerConfig } from "./contract";
-import { MAX_LOCAL_SHORTCUT_LENGTH } from "./contract";
+import type { Capabilities, Settings, SyncSummary, Theme, TimerConfig } from "./contract";
+import { MAX_LOCAL_SHORTCUT_LENGTH, MAX_SYNC_DIRECTORY_LENGTH } from "./contract";
 import {
   chordFromEvent,
   effectiveShortcut,
@@ -34,6 +34,10 @@ export interface SettingsViewOptions {
   onPreview(theme: Theme, textScale: number): void;
   /** Play the completion chime once, even while the toggle is off. */
   onPreviewSound(volumePercent: number): void;
+  /** Open the native folder picker. Resolves to null when cancelled. */
+  onChooseSyncDirectory(): Promise<string | null>;
+  /** Write and import the Markdown session files. */
+  onSyncSessions(): Promise<SyncSummary>;
   announce(message: string): void;
 }
 
@@ -222,6 +226,18 @@ export class SettingsView {
 
   private readonly retentionError: HTMLElement;
 
+  private readonly syncDirectory: HTMLInputElement;
+
+  private readonly syncDirectoryError: HTMLElement;
+
+  private readonly syncStatus: HTMLElement;
+
+  private readonly syncError: HTMLElement;
+
+  private readonly chooseSync: HTMLButtonElement;
+
+  private readonly syncNow: HTMLButtonElement;
+
   private readonly toggles = new Map<string, ToggleControls>();
 
   private readonly shortcutRows = new Map<string, ShortcutRow>();
@@ -233,6 +249,13 @@ export class SettingsView {
   private base: Settings | null = null;
 
   private dirty = false;
+
+  private syncInFlight = false;
+
+  private chooserInFlight = false;
+
+  /** The first message of the last unsuccessful submit, for the announcement. */
+  private invalidMessage: string | null = null;
 
   private capabilities: Capabilities;
 
@@ -391,6 +414,46 @@ export class SettingsView {
     this.retentionDays.setAttribute("aria-describedby", "retention-days-error");
     this.retentionDays.addEventListener("input", onChange);
 
+    this.syncDirectory = el("input", {
+      class: "input",
+      attrs: {
+        type: "text",
+        id: "sync-directory",
+        autocomplete: "off",
+        spellcheck: "false",
+        maxlength: String(MAX_SYNC_DIRECTORY_LENGTH)
+      }
+    });
+    this.syncDirectoryError = el("p", {
+      class: "field__error",
+      id: "sync-directory-error",
+      attrs: { role: "alert" }
+    });
+    setHidden(this.syncDirectoryError, true);
+    // A typed path clears the inline complaint as soon as it is valid again.
+    this.syncDirectory.addEventListener("input", () => {
+      onChange();
+      this.readSyncDirectory();
+    });
+
+    this.syncStatus = el("p", { class: "field__note", id: "sync-status", attrs: { role: "status" } });
+    setHidden(this.syncStatus, true);
+    this.syncError = el("p", { class: "field__error", id: "sync-error", attrs: { role: "alert" } });
+    setHidden(this.syncError, true);
+
+    this.chooseSync = el("button", {
+      class: "button button--small",
+      attrs: { type: "button", "data-action": "choose-sync-directory" },
+      text: t("settings.sync.choose"),
+      on: { click: () => void this.chooseSyncDirectory() }
+    });
+    this.syncNow = el("button", {
+      class: "button button--small",
+      attrs: { type: "button", "data-action": "sync-now" },
+      text: t("settings.sync.now"),
+      on: { click: () => void this.runSync() }
+    });
+
     this.dirtyNote = el("p", { class: "settings__dirty", text: t("settings.dirty_note") });
     setHidden(this.dirtyNote, true);
 
@@ -492,6 +555,20 @@ export class SettingsView {
         fieldWrapper("retention-days", t("settings.retention_days", { count: "N" }), this.retentionDays),
         this.retentionError
       ]),
+      el("fieldset", { class: "fieldset" }, [
+        el("legend", { class: "fieldset__legend", text: t("settings.sync") }),
+        fieldWrapper(
+          "sync-directory",
+          t("settings.sync.directory"),
+          this.syncDirectory,
+          t("settings.sync.directory_hint")
+        ),
+        this.syncDirectoryError,
+        el("div", { class: "sync-actions" }, [this.chooseSync, this.syncNow]),
+        this.syncStatus,
+        this.syncError,
+        el("p", { class: "field__note", text: t("settings.sync.note") })
+      ]),
       this.buildShortcutsSection(),
       el("p", { class: "settings__note", text: t("settings.next_session_note") }),
       this.dirtyNote,
@@ -522,6 +599,10 @@ export class SettingsView {
       onClose: () => {
         this.dirty = false;
         setHidden(this.dirtyNote, true);
+        setText(this.syncStatus, "");
+        setHidden(this.syncStatus, true);
+        setText(this.syncError, "");
+        setHidden(this.syncError, true);
       },
       confirmClose: async () => {
         if (!this.dirty) {
@@ -819,6 +900,127 @@ export class SettingsView {
     setHidden(this.dirtyNote, false);
   }
 
+  /**
+   * Open the native folder picker.
+   *
+   * A cancelled picker changes nothing; a returned path is written into the
+   * field so the user can still edit it before saving.
+   */
+  private async chooseSyncDirectory(): Promise<void> {
+    if (this.chooserInFlight) {
+      return;
+    }
+    this.chooserInFlight = true;
+    this.chooseSync.disabled = true;
+    this.chooseSync.setAttribute("aria-disabled", "true");
+    setHidden(this.syncError, true);
+    try {
+      const path = await this.options.onChooseSyncDirectory();
+      if (path === null || path.length === 0) {
+        return;
+      }
+      this.syncDirectory.value = path;
+      this.markDirty();
+      this.readSyncDirectory();
+    } catch (error) {
+      this.showSyncError(t("error.choose_sync_directory_failed", { message: describeError(error) }));
+    } finally {
+      this.chooserInFlight = false;
+      this.chooseSync.disabled = false;
+      this.chooseSync.removeAttribute("aria-disabled");
+    }
+  }
+
+  /**
+   * Write the local sessions and import the unknown ones.
+   *
+   * The saved path is never touched here: a failed run only adds a message.
+   */
+  private async runSync(): Promise<void> {
+    if (this.syncInFlight) {
+      return;
+    }
+    this.syncInFlight = true;
+    this.syncNow.disabled = true;
+    this.syncNow.setAttribute("aria-disabled", "true");
+    setHidden(this.syncStatus, true);
+    setText(this.syncStatus, "");
+    setHidden(this.syncError, true);
+    setText(this.syncError, "");
+    this.options.announce(t("settings.sync.running"));
+    try {
+      const summary = await this.options.onSyncSessions();
+      const message =
+        summary.rejected > 0
+          ? t("settings.sync.summary_rejected", {
+              written: summary.written,
+              imported: summary.imported,
+              rejected: summary.rejected
+            })
+          : t("settings.sync.summary", {
+              written: summary.written,
+              imported: summary.imported
+            });
+      setText(this.syncStatus, message);
+      setHidden(this.syncStatus, false);
+      this.options.announce(message);
+    } catch (error) {
+      const message = t("error.sync_failed", { message: describeError(error) });
+      this.showSyncError(message);
+      this.options.announce(message);
+    } finally {
+      this.syncInFlight = false;
+      this.syncNow.disabled = false;
+      this.syncNow.removeAttribute("aria-disabled");
+    }
+  }
+
+  private showSyncError(message: string): void {
+    setText(this.syncError, message);
+    setHidden(this.syncError, false);
+  }
+
+  private showSyncDirectoryError(message: string): void {
+    this.rememberInvalid(message);
+    setText(this.syncDirectoryError, message);
+    setHidden(this.syncDirectoryError, false);
+    this.syncDirectory.setAttribute("aria-invalid", "true");
+    this.syncDirectory.setAttribute(
+      "aria-describedby",
+      "sync-directory-hint sync-directory-error"
+    );
+  }
+
+  private clearSyncDirectoryError(): void {
+    setText(this.syncDirectoryError, "");
+    setHidden(this.syncDirectoryError, true);
+    this.syncDirectory.removeAttribute("aria-invalid");
+    this.syncDirectory.setAttribute("aria-describedby", "sync-directory-hint");
+  }
+
+  /**
+   * Read and validate the folder field.
+   *
+   * Empty is allowed and switches sync off. A relative path is refused here,
+   * before the backend rejects it. The folder does not have to exist yet: it
+   * may sit on a drive that is not mounted right now.
+   */
+  private readSyncDirectory(): { ok: boolean; value: string } {
+    const value = this.syncDirectory.value.trim();
+    if (value.length > MAX_SYNC_DIRECTORY_LENGTH) {
+      this.showSyncDirectoryError(
+        t("error.sync_directory_too_long", { max: MAX_SYNC_DIRECTORY_LENGTH })
+      );
+      return { ok: false, value };
+    }
+    if (value.length > 0 && !isAbsolutePath(value)) {
+      this.showSyncDirectoryError(t("error.invalid_sync_directory"));
+      return { ok: false, value };
+    }
+    this.clearSyncDirectoryError();
+    return { ok: true, value };
+  }
+
   private preview(): void {
     this.options.onPreview(this.selectedTheme(), this.selectedTextScale());
   }
@@ -864,6 +1066,7 @@ export class SettingsView {
     this.closeToTray.input.checked = settings.closeToTray;
     this.historyEnabled.input.checked = settings.historyEnabled;
     this.retentionDays.value = String(settings.retentionDays);
+    this.syncDirectory.value = settings.syncDirectory;
     this.populateShortcuts(settings);
     this.updateSoundControls();
     this.clearErrors();
@@ -893,6 +1096,7 @@ export class SettingsView {
   }
 
   private showError(controls: DurationControls, message: string): void {
+    this.rememberInvalid(message);
     setText(controls.error, message);
     setHidden(controls.error, false);
     for (const input of [controls.hours, controls.minutes, controls.seconds]) {
@@ -911,6 +1115,7 @@ export class SettingsView {
   }
 
   private showFieldError(input: HTMLInputElement, error: HTMLElement, message: string): void {
+    this.rememberInvalid(message);
     setText(error, message);
     setHidden(error, false);
     input.setAttribute("aria-invalid", "true");
@@ -924,14 +1129,25 @@ export class SettingsView {
     input.removeAttribute("aria-describedby");
   }
 
+  /** Keep the first complaint of one submit for the single live announcement. */
+  private rememberInvalid(message: string): void {
+    if (this.invalidMessage === null) {
+      this.invalidMessage = message;
+    }
+  }
+
   private clearErrors(): void {
-    this.clearError(this.focus);
-    this.clearError(this.shortBreak);
+    this.clearError(this.focus);    this.clearError(this.shortBreak);
     this.clearError(this.longBreak);
     this.clearFieldError(this.interval, this.intervalError);
     this.clearFieldError(this.label, this.labelError);
     this.clearFieldError(this.globalShortcut, this.globalShortcutError);
     this.clearFieldError(this.retentionDays, this.retentionError);
+    this.clearSyncDirectoryError();
+    setText(this.syncStatus, "");
+    setHidden(this.syncStatus, true);
+    setText(this.syncError, "");
+    setHidden(this.syncError, true);
   }
 
   private buildDraft(): { draft: Settings | null; firstInvalid: HTMLElement | null } {
@@ -939,6 +1155,8 @@ export class SettingsView {
     if (!base) {
       return { draft: null, firstInvalid: null };
     }
+
+    this.invalidMessage = null;
 
     const focus = this.readDuration(this.focus, t("error.invalid_duration"));
     const shortBreak = this.readDuration(this.shortBreak, t("error.invalid_duration"));
@@ -1016,6 +1234,11 @@ export class SettingsView {
       this.clearFieldError(this.retentionDays, this.retentionError);
     }
 
+    const syncDirectory = this.readSyncDirectory();
+    if (!syncDirectory.ok) {
+      firstInvalid = firstInvalid ?? this.syncDirectory;
+    }
+
     if (!focus.ok || !shortBreak.ok || !longBreak.ok || firstInvalid) {
       return { draft: null, firstInvalid };
     }
@@ -1046,6 +1269,7 @@ export class SettingsView {
       closeToTray: this.closeToTray.input.checked,
       historyEnabled: this.historyEnabled.input.checked,
       retentionDays: retentionValue,
+      syncDirectory: syncDirectory.value,
       viewMode: base.viewMode,
       floating: base.floating,
       // Only usable overrides that differ from the default are stored.
@@ -1061,7 +1285,7 @@ export class SettingsView {
       if (firstInvalid) {
         firstInvalid.focus();
       }
-      this.options.announce(t("error.invalid_duration"));
+      this.options.announce(this.invalidMessage ?? t("error.invalid_duration"));
       return;
     }
 
@@ -1101,6 +1325,44 @@ export class SettingsView {
       initialFocus: "cancel"
     });
   }
+}
+
+/**
+ * True when the value is an absolute path on this or another platform.
+ *
+ * Both Unix-style and Windows-style paths are accepted, because the stored path
+ * can come from the other computer through the settings file. A drive letter
+ * needs a separator after the colon; `C:folder` is relative to the drive.
+ */
+export function isAbsolutePath(value: string): boolean {
+  if (value.startsWith("/")) {
+    return true;
+  }
+  if (/^[A-Za-z]:[\\/]/.test(value)) {
+    return true;
+  }
+  // A UNC share such as \\server\share.
+  if (/^\\\\[^\\/]+[\\/][^\\/]+/.test(value)) {
+    return true;
+  }
+  return false;
+}
+
+/** The best available explanation of a failed bridge call. */
+function describeError(error: unknown): string {
+  if (typeof error === "object" && error !== null) {
+    const message = (error as Record<string, unknown>)["message"];
+    if (typeof message === "string" && message.length > 0) {
+      return message;
+    }
+  }
+  if (error instanceof Error && error.message.length > 0) {
+    return error.message;
+  }
+  if (typeof error === "string" && error.length > 0) {
+    return error;
+  }
+  return t("error.unknown_failure");
 }
 
 function shortcutIssueMessage(issue: ShortcutIssue): string {

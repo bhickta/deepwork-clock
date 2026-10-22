@@ -39,6 +39,12 @@ correct even when the window is hidden or the WebView is throttled.
   Shortcuts*, or reset one or all of them. An invalid, duplicate or reserved
   chord never replaces a binding that already works, and the help dialog shows
   the keys in effect.
+- **Optional session names.** Name a session from the main view; earlier names
+  are suggested with fuzzy search, so the same project is one keystroke away.
+- **Git-friendly session logs.** Point the app at a folder in a git repository
+  and it writes one human-readable Markdown file per session under
+  `deepwork-sessions/`. Pull on another computer, sync again, and the sessions
+  merge by filename. The app never runs git itself.
 - **Crash recovery.** A running session is checkpointed; after a restart the app
   offers *Resume* or *Discard* and never silently continues.
 - **Local session history.** Completed, skipped and ended phases are stored
@@ -99,6 +105,16 @@ meaning on a focused button.
 The Linux packages declare their dependencies; the `.deb` is built against an
 Ubuntu 24.04 baseline. The AppImage bundles most of them, but an AppImage is
 not proof of compatibility with every distribution.
+
+### Sharing sessions between computers
+
+Choose a folder that is a git checkout in **Settings → Session sync**. The app
+writes one Markdown file per finished phase to `<folder>/deepwork-sessions/`.
+Commit and push that folder on one computer, pull it on the other, then press
+**Sync now**; files are merged by a unique session id, so duplicates are
+ignored. The app does not run git, resolve conflicts or read files outside the
+`deepwork-sessions` subfolder. Removing the folder path switches the feature
+off.
 
 ### Linux desktops: i3, Regolith and Wayland
 

@@ -17,6 +17,7 @@ import {
 } from "./shortcuts";
 import { t } from "./i18n";
 import { playCompletionChime } from "./sound";
+import { SessionName } from "./session-name";
 import { newRequestId, toAppError, type Bridge } from "./bridge";
 import type {
   Action,
@@ -27,6 +28,7 @@ import type {
   RecoveryCheckpoint,
   Settings,
   Snapshot,
+  SyncSummary,
   Theme,
   TimerConfig
 } from "./contract";
@@ -77,6 +79,11 @@ export class App {
   private readonly now: () => number;
 
   private readonly playSound: (volumePercent: number) => void;
+
+  private sessionName!: SessionName;
+
+  /** In-flight name save, awaited before a phase starts. */
+  private pendingNameSave: Promise<void> | null = null;
 
   /** The last phase that already made a sound, so a duplicate is silent. */
   private chimedPhaseId: string | null = null;
@@ -228,6 +235,7 @@ export class App {
       this.applyCapabilities();
       this.pinned = settings.floating;
       this.applyViewMode(settings.viewMode);
+      this.sessionName.setValue(settings.config.label);
       const snapshot = await this.bridge.getSnapshot();
       this.applySnapshot(snapshot);
       await this.loadRecovery();
@@ -330,12 +338,21 @@ export class App {
       onConfirm: (phaseId) => this.confirmHistoryRecord(phaseId)
     });
 
+    this.sessionName = new SessionName({
+      doc: this.doc,
+      onCommit: (name) => {
+        this.pendingNameSave = this.saveSessionName(name);
+      }
+    });
+
     this.settingsView = new SettingsView(this.doc, {
       capabilities: this.capabilities,
       onSave: (draft) => this.saveSettingsDraft(draft),
       onCancel: () => this.applyThemeSettings(),
       onPreview: (theme, textScale) => this.previewTheme(theme, textScale),
       onPreviewSound: (volumePercent) => this.previewCompletionSound(volumePercent),
+      onChooseSyncDirectory: () => this.bridge.chooseSyncDirectory(),
+      onSyncSessions: () => this.syncSessions(),
       announce: (message) => this.announce(message)
     });
 
@@ -499,6 +516,7 @@ export class App {
       this.errorRegion,
       this.noticeRegion,
       this.fatalPanel,
+      this.sessionName.element,
       this.timerView.element,
       presets
     ]);
@@ -1063,6 +1081,9 @@ export class App {
   }
 
   private async handlePrimary(): Promise<void> {
+    if (this.pendingNameSave) {
+      await this.pendingNameSave;
+    }
     const snapshot = this.snapshot;
     if (!snapshot) {
       return;
@@ -1235,6 +1256,7 @@ export class App {
       this.applyThemeSettings();
       this.updateHelpShortcuts();
       this.applyCapabilities();
+      this.sessionName.setValue(saved.config.label);
       return null;
     } catch (error) {
       return toAppError(error).message;
@@ -1434,6 +1456,38 @@ export class App {
     }
   }
 
+  /**
+   * Store the optional session name. It is applied to the next phase; while
+   * the timer is idle the engine is reconfigured immediately so the current
+   * start uses it.
+   */
+  private async saveSessionName(name: string): Promise<void> {
+    const settings = this.settings;
+    if (!settings || settings.config.label === name) {
+      return;
+    }
+    const config: TimerConfig = { ...settings.config, label: name };
+    try {
+      const saved = await this.bridge.saveSettings({
+        expectedSettingsRevision: settings.revision,
+        settings: { ...settings, config }
+      });
+      this.settings = saved;
+      const snapshot = this.snapshot;
+      if (snapshot && (snapshot.status === "idle" || snapshot.status === "completed")) {
+        await this.send({ type: "configure", config: saved.config });
+      }
+      this.announce(
+        name.length > 0
+          ? t("session.name.saved", { name })
+          : t("session.name.cleared")
+      );
+    } catch (error) {
+      this.sessionName.setValue(settings.config.label);
+      this.showError(toAppError(error).message);
+    }
+  }
+
   private async loadHistory(): Promise<void> {
     if (this.settings && !this.settings.historyEnabled) {
       this.history = [];
@@ -1443,6 +1497,7 @@ export class App {
     try {
       this.history = await this.bridge.listHistory(50);
       this.historyView.update(this.history);
+      this.sessionName.setSuggestions(this.history.map((record) => record.label));
     } catch (error) {
       this.showError(t("error.history_failed", { message: toAppError(error).message }));
     }
@@ -1489,6 +1544,21 @@ export class App {
     } catch (error) {
       this.showError(t("error.confirm_failed", { message: toAppError(error).message }));
     }
+  }
+
+  /**
+   * Run one Markdown sync pass.
+   *
+   * Imported sessions become part of the local history, so an open history view
+   * is refreshed. A failure is thrown back to the settings dialog, which shows
+   * it next to the folder field without touching the saved path.
+   */
+  private async syncSessions(): Promise<SyncSummary> {
+    const summary = await this.bridge.syncSessions();
+    if (summary.imported > 0) {
+      await this.loadHistory();
+    }
+    return summary;
   }
 
   private openSettings(): void {

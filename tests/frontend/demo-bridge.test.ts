@@ -124,6 +124,21 @@ describe("development preview bridge", () => {
     expect(await bridge.getRecovery()).toBeNull();
   });
 
+  it("offers a deterministic session sync without a native picker", async () => {
+    const bridge = createDemoBridge();
+    const settings = await bridge.getSettings();
+    expect(settings.syncDirectory).toBe("");
+
+    expect(await bridge.chooseSyncDirectory()).toBeNull();
+    expect(await bridge.syncSessions()).toEqual({
+      directory: "",
+      files: 0,
+      written: 0,
+      imported: 0,
+      rejected: 0
+    });
+  });
+
   it("offers a redacted diagnostics document", async () => {
     const bridge = createDemoBridge();
     const settings = await bridge.getSettings();

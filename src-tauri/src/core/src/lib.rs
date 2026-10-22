@@ -10,6 +10,7 @@
 //! it.
 
 pub mod csv;
+pub mod markdown;
 pub mod error;
 pub mod history;
 pub mod recovery;
