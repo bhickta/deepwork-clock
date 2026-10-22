@@ -6,7 +6,7 @@ correct even when the window is hidden or the WebView is throttled.
 
 ![Deepwork Clock running in its native Linux WebKit window](docs/images/native-light.png)
 
-> **Status: `0.1.0-alpha.1` — an alpha, not a production release.**
+> **Status: `0.2.0-beta.1` — a feature-complete beta candidate, not a production release.**
 > The packages are unsigned, the manual screen-reader matrix has not been
 > completed, and several platforms have not been exercised by hand yet. See
 > [Known limitations](#known-limitations) before you rely on it.

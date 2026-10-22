@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, NaiveDate};
 
-use crate::history::{HistoryPhase, HistoryRecord};
+use crate::history::{HistoryOutcome, HistoryPhase, HistoryRecord};
 
 /// Folder inside the user's sync repository.
 pub const SESSION_DIRECTORY: &str = "deepwork-sessions";
@@ -28,57 +28,165 @@ const MARKER_END: &str = " -->";
 /// Largest Markdown session file accepted from disk.
 const MAX_FILE_BYTES: u64 = 64 * 1024;
 
-/// One finished phase rendered as Markdown.
+/// One finished phase rendered as readable Markdown.
+///
+/// No machine-only blob is written: every value needed to read the file back
+/// appears in a labelled list a person can edit. The parser is tolerant about
+/// whitespace but strict about the values it accepts.
 pub fn render(record: &HistoryRecord) -> String {
     let duration = human_duration(record.duration_ms);
-    let label = if record.label.trim().is_empty() {
-        "—".to_string()
-    } else {
-        record.label.trim().to_string()
-    };
-    let json = serde_json::to_string(record).unwrap_or_else(|_| "null".to_string());
+    let label = escape_label(record.label.trim());
+    let label_line = if label.is_empty() { "(none)" } else { &label };
     format!(
-        "# {phase} session — {date}\n\n\
-         | Field | Value |\n\
-         | --- | --- |\n\
-         | Phase | {phase} |\n\
-         | Started | {started} |\n\
-         | Ended | {ended} |\n\
-         | Duration | {duration} |\n\
-         | Outcome | {outcome} |\n\
-         | Interrupted | {interrupted} |\n\
-         | Confirmed | {confirmed} |\n\
-         | Label | {label} |\n\
-         | Session id | `{id}` |\n\n\
-         <!-- This line is read by Deepwork Clock. Keep it intact. -->\n\
-         {marker}{json}{end}\n",
+        "# {phase} session — {date}\n\n- Phase: {phase}\n- Started: {started}\n- Ended: {ended}\n- Duration: {duration} ({ms} ms)\n- Outcome: {outcome}\n- Interrupted: {interrupted}\n- Confirmed: {confirmed}\n- Label: {label}\n- Session ID: `{id}`\n- Local date: {date}\n",
         phase = phase_name(record.phase),
         date = record.local_date,
         started = record.started_at,
         ended = record.ended_at,
         duration = duration,
+        ms = record.duration_ms,
         outcome = record.outcome.as_str(),
         interrupted = yes_no(record.interrupted),
         confirmed = yes_no(record.confirmed),
-        label = label,
+        label = label_line,
         id = record.phase_id,
-        marker = MARKER_START,
-        json = json,
-        end = MARKER_END,
     )
 }
 
 /// Reads a record back from a Markdown session file.
 ///
-/// Returns `None` when the marker is absent, the JSON is invalid or the record
-/// fails the safety checks.
+/// Supports the readable field list and, for files written by an earlier
+/// build, the old HTML-comment JSON. Returns `None` when a required field is
+/// missing or a value fails the safety checks.
 pub fn parse(text: &str) -> Option<HistoryRecord> {
+    let record = parse_legacy(text).or_else(|| parse_fields(text))?;
+    validate(&record).then_some(record)
+}
+
+fn parse_fields(text: &str) -> Option<HistoryRecord> {
+    let mut phase = None;
+    let mut started_at = None;
+    let mut ended_at = None;
+    let mut duration_ms = None;
+    let mut label = String::new();
+    let mut outcome = None;
+    let mut interrupted = None;
+    let mut confirmed = None;
+    let mut phase_id = None;
+    let mut local_date = None;
+
+    for raw in text.lines() {
+        let line = raw.trim();
+        let Some(rest) = line.strip_prefix("- ") else {
+            continue;
+        };
+        let Some((key, value)) = rest.split_once(':') else {
+            continue;
+        };
+        let value = value.trim();
+        match key.trim() {
+            "Phase" => phase = parse_phase(value),
+            "Started" => started_at = Some(value.to_string()),
+            "Ended" => ended_at = Some(value.to_string()),
+            "Duration" => duration_ms = parse_duration(value),
+            "Outcome" => outcome = parse_outcome(value),
+            "Interrupted" => interrupted = parse_yes_no(value),
+            "Confirmed" => confirmed = parse_yes_no(value),
+            "Label" => {
+                label = if value == "(none)" {
+                    String::new()
+                } else {
+                    unescape_label(value)
+                }
+            }
+            "Session ID" => phase_id = Some(value.trim_matches('`').trim().to_string()),
+            "Local date" => local_date = Some(value.to_string()),
+            _ => {}
+        }
+    }
+
+    Some(HistoryRecord {
+        phase_id: phase_id?,
+        phase: phase?,
+        started_at: started_at?,
+        ended_at: ended_at?,
+        duration_ms: duration_ms?,
+        label,
+        outcome: outcome?,
+        interrupted: interrupted?,
+        confirmed: confirmed?,
+        local_date: local_date?,
+    })
+}
+
+/// The previous format, kept so older checkouts keep importing.
+fn parse_legacy(text: &str) -> Option<HistoryRecord> {
     let start = text.find(MARKER_START)?;
     let rest = &text[start + MARKER_START.len()..];
     let end = rest.find(MARKER_END)?;
-    let json = rest[..end].trim();
-    let record: HistoryRecord = serde_json::from_str(json).ok()?;
-    validate(&record).then_some(record)
+    serde_json::from_str(rest[..end].trim()).ok()
+}
+
+fn parse_phase(value: &str) -> Option<HistoryPhase> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "focus" => Some(HistoryPhase::Focus),
+        "short break" | "short_break" => Some(HistoryPhase::ShortBreak),
+        "long break" | "long_break" => Some(HistoryPhase::LongBreak),
+        _ => None,
+    }
+}
+
+fn parse_outcome(value: &str) -> Option<HistoryOutcome> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "completed" => Some(HistoryOutcome::Completed),
+        "skipped" => Some(HistoryOutcome::Skipped),
+        "ended" => Some(HistoryOutcome::Ended),
+        _ => None,
+    }
+}
+
+fn parse_yes_no(value: &str) -> Option<bool> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "yes" => Some(true),
+        "no" => Some(false),
+        _ => None,
+    }
+}
+
+/// Reads the exact milliseconds from `5m 00s (300000 ms)`.
+fn parse_duration(value: &str) -> Option<u64> {
+    let open = value.rfind('(')?;
+    let rest = value[open + 1..].trim();
+    let digits = rest.strip_suffix(" ms)")?.trim();
+    digits.parse().ok()
+}
+
+fn escape_label(label: &str) -> String {
+    label
+        .replace('\\', "\\\\")
+        .replace('\n', "\\n")
+        .replace('\r', "")
+}
+
+fn unescape_label(label: &str) -> String {
+    let mut result = String::with_capacity(label.len());
+    let mut characters = label.chars();
+    while let Some(character) = characters.next() {
+        if character != '\\' {
+            result.push(character);
+            continue;
+        }
+        match characters.next() {
+            Some('n') => result.push('\n'),
+            Some('\\') => result.push('\\'),
+            Some(other) => {
+                result.push('\\');
+                result.push(other);
+            }
+            None => result.push('\\'),
+        }
+    }
+    result
 }
 
 /// A stable, filesystem-safe file name. Git stores one file per phase.
@@ -207,6 +315,17 @@ pub fn sync_directory(root: &Path, records: &[HistoryRecord]) -> Result<SyncOutc
         }
         let path = directory.join(file_name(record));
         if path.exists() {
+            // Migrate files written by the earlier JSON-comment format so the
+            // repository becomes readable without losing a record.
+            if let Some(text) = read_limited(&path) {
+                if text.contains(MARKER_START) {
+                    if let Some(existing) = parse_legacy(&text) {
+                        if validate(&existing) {
+                            write_atomic(&path, render(&existing).as_bytes())?;
+                        }
+                    }
+                }
+            }
             continue;
         }
         write_atomic(&path, render(record).as_bytes())?;
@@ -272,7 +391,6 @@ fn write_atomic(path: &Path, content: &[u8]) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::history::HistoryOutcome;
 
     fn record() -> HistoryRecord {
         HistoryRecord {
@@ -290,10 +408,29 @@ mod tests {
     }
 
     #[test]
-    fn a_record_round_trips_through_markdown() {
+    fn a_record_round_trips_through_readable_markdown() {
         let text = render(&record());
-        assert!(text.contains("| Focus |") || text.contains("| Phase | Focus |"));
-        assert!(text.contains("50m 00s"));
+        assert!(text.contains("- Phase: Focus"));
+        assert!(text.contains("- Duration: 50m 00s (3000000 ms)"));
+        assert!(text.contains("- Label: Writing | notes"));
+        assert!(!text.contains("deepwork-clock:v1"));
+        assert!(!text.contains("<!--"));
+        assert_eq!(parse(&text), Some(record()));
+    }
+
+    #[test]
+    fn a_multiline_label_stays_on_one_readable_line() {
+        let mut value = record();
+        value.label = "line one\nline two".to_string();
+        let text = render(&value);
+        assert_eq!(text.lines().filter(|line| line.starts_with("- Label")).count(), 1);
+        assert_eq!(parse(&text), Some(value));
+    }
+
+    #[test]
+    fn files_from_the_earlier_json_comment_still_import() {
+        let json = serde_json::to_string(&record()).expect("json");
+        let text = format!("# old\n\n<!-- deepwork-clock:v1 {json} -->\n");
         assert_eq!(parse(&text), Some(record()));
     }
 
@@ -309,9 +446,11 @@ mod tests {
 
     #[test]
     fn unsafe_or_malformed_records_are_refused() {
+        assert!(parse("no fields here").is_none());
         let text = render(&record());
-        assert!(parse(&text.replace("deepwork-clock:v1", "other")).is_none());
-        assert!(parse("no marker here").is_none());
+        assert!(parse(&text.replace("- Session ID:", "- Nonsense:")).is_none());
+        assert!(parse(&text.replace("- Duration: 50m 00s (3000000 ms)", "- Duration: 50m 00s")).is_none());
+        assert!(parse(&text.replace("- Phase: Focus", "- Phase: Meeting")).is_none());
 
         let mut bad = record();
         bad.duration_ms = 0;
@@ -352,6 +491,27 @@ mod tests {
         assert_eq!(outcome.files, 2);
         assert_eq!(outcome.rejected, 1);
         assert_eq!(outcome.parsed.len(), 1);
+    }
+
+    #[test]
+    fn a_legacy_file_is_rewritten_without_losing_the_record() {
+        let root = tempfile::tempdir().expect("temp dir");
+        let directory = session_directory(root.path());
+        fs::create_dir_all(&directory).expect("dir");
+        let path = directory.join(file_name(&record()));
+        let json = serde_json::to_string(&record()).expect("json");
+        fs::write(
+            &path,
+            format!("# old\n\n<!-- deepwork-clock:v1 {json} -->\n"),
+        )
+        .expect("write");
+
+        let outcome = sync_directory(root.path(), std::slice::from_ref(&record())).expect("sync");
+        assert_eq!(outcome.written, 0);
+        let text = fs::read_to_string(&path).expect("read");
+        assert!(!text.contains("deepwork-clock:v1"));
+        assert!(text.contains("- Phase: Focus"));
+        assert_eq!(parse(&text), Some(record()));
     }
 
     #[test]

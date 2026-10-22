@@ -153,3 +153,13 @@ needed for an always-floating preference.
 - The native folder picker and a real sync against a git checkout were not
   exercised in this wave. The file behaviour is unit-tested against temporary
   directories only.
+
+### Readable session logs (2026-10-22)
+
+One Markdown file per phase is now a labelled field list (`Phase`, `Started`,
+`Ended`, `Duration` with exact milliseconds, `Outcome`, `Interrupted`,
+`Confirmed`, `Label`, `Session ID`, `Local date`). No JSON or HTML comment is
+written. The parser reads that list back; files from the earlier JSON-comment
+format still import and are rewritten in readable form on the next sync.
+Round trip, multi-line labels, malformed fields and migration are covered by
+the desktop-free core tests.

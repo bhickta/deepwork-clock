@@ -1,6 +1,6 @@
 # Toolchain and support matrix evidence
 
-Recorded for Deepwork Clock `0.1.0-alpha.1`.
+Recorded for Deepwork Clock `0.2.0-beta.1`.
 
 This file records what was **actually observed** while preparing the build,
 release and documentation tooling. It separates facts from intentions: a

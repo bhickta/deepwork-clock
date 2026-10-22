@@ -1,6 +1,6 @@
 [package]
 name = "deepwork-clock"
-version = "0.1.0-alpha.1"
+version = "0.2.0-beta.1"
 description = "Deepwork Clock — a calm, accessible desktop focus timer"
 authors = ["Deepwork Clock contributors"]
 edition = "2021"
