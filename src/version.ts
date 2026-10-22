@@ -7,7 +7,7 @@
  */
 declare const __APP_VERSION__: string | undefined;
 
-const FALLBACK_VERSION = "0.2.0-beta.1";
+const FALLBACK_VERSION = "0.2.0-beta.2";
 
 export const APP_VERSION: string =
   typeof __APP_VERSION__ === "string" && __APP_VERSION__.length > 0

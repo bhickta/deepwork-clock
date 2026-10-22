@@ -1,6 +1,6 @@
 {
   "name": "deepwork-clock",
-  "version": "0.2.0-beta.1",
+  "version": "0.2.0-beta.2",
   "private": true,
   "type": "module",
   "description": "Deepwork Clock - an offline, keyboard-first desktop focus timer built with Tauri 2, Rust and vanilla TypeScript.",

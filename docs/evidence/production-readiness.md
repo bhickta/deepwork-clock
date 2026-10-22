@@ -1,6 +1,6 @@
 # Production readiness: T40–T47
 
-Status as of 2026-10-22. The version is `0.2.0-beta.1` and nothing in this
+Status as of 2026-10-22. The version is `0.2.0-beta.2` and nothing in this
 file has passed. It records what the project knows, what it does not know, and
 what a maintainer has to run before a stable release.
 

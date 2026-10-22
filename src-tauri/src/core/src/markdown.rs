@@ -423,7 +423,12 @@ mod tests {
         let mut value = record();
         value.label = "line one\nline two".to_string();
         let text = render(&value);
-        assert_eq!(text.lines().filter(|line| line.starts_with("- Label")).count(), 1);
+        assert_eq!(
+            text.lines()
+                .filter(|line| line.starts_with("- Label"))
+                .count(),
+            1
+        );
         assert_eq!(parse(&text), Some(value));
     }
 
@@ -449,7 +454,10 @@ mod tests {
         assert!(parse("no fields here").is_none());
         let text = render(&record());
         assert!(parse(&text.replace("- Session ID:", "- Nonsense:")).is_none());
-        assert!(parse(&text.replace("- Duration: 50m 00s (3000000 ms)", "- Duration: 50m 00s")).is_none());
+        assert!(
+            parse(&text.replace("- Duration: 50m 00s (3000000 ms)", "- Duration: 50m 00s"))
+                .is_none()
+        );
         assert!(parse(&text.replace("- Phase: Focus", "- Phase: Meeting")).is_none());
 
         let mut bad = record();

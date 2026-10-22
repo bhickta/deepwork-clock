@@ -4,14 +4,18 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The first release is
 a prerelease, so the identifier (`alpha.1` or `beta.1`) is part of the public
-version. `0.1.0-alpha.1` was published on 2026-10-21; `0.2.0-beta.1` is the
+version. `0.1.0-alpha.1` was published on 2026-10-21; `0.2.0-beta.2` is the
 feature-complete candidate.
 
-## [0.2.0-beta.1] - 2026-10-22
+## [0.2.0-beta.2] - 2026-10-22
 
 Feature-complete beta candidate. The packages are still **unsigned** and the
 manual screen-reader, Windows/macOS runtime, signing and soak gates are not
 verified; see `docs/evidence/production-readiness.md`.
+
+`0.2.0-beta.1` was tagged but produced no release because the Rust formatting
+gate failed. `0.2.0-beta.2` contains the same changes with every crate
+formatted.
 
 ### Added
 
@@ -111,7 +115,7 @@ verified; see `docs/evidence/production-readiness.md`.
 
 The first reviewable foundation: countdown and focus-cycle timing, durable
 settings, crash recovery, bounded history, themes, compact view, tray and
-opt-in desktop integration. An unsigned alpha, superseded by `0.2.0-beta.1`.
+opt-in desktop integration. An unsigned alpha, superseded by `0.2.0-beta.2`.
 
-[0.2.0-beta.1]: https://github.com/bhickta/deepwork-clock/releases/tag/v0.2.0-beta.1
+[0.2.0-beta.2]: https://github.com/bhickta/deepwork-clock/releases/tag/v0.2.0-beta.2
 [0.1.0-alpha.1]: https://github.com/bhickta/deepwork-clock/releases/tag/v0.1.0-alpha.1

@@ -10,9 +10,9 @@
 //! it.
 
 pub mod csv;
-pub mod markdown;
 pub mod error;
 pub mod history;
+pub mod markdown;
 pub mod recovery;
 pub mod service;
 pub mod settings;

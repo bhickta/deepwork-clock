@@ -6,7 +6,7 @@ Deepwork Clock is in alpha. Only the latest published alpha receives fixes.
 
 | Version | Supported |
 | --- | --- |
-| 0.2.0-beta.1 | Yes |
+| 0.2.0-beta.2 | Yes |
 | 0.1.0-alpha.1 | No (superseded) |
 | anything older | No |
 

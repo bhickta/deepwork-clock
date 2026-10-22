@@ -39,7 +39,7 @@ Record task ID, implementation status, executed checks and missing checks separa
 | T13–T20 | Implemented | Themes, timer, settings, dialogs/shortcuts, compact/pin requests, durable settings/recovery and native icons |
 | T21 | Local checks run | Unit, browser/axe and native WebDriver tests; final gate results recorded separately |
 | T22 | In progress | CI/release workflow source complete; first hosted run pending |
-| T23 | Release in progress | Version `0.2.0-beta.1` in every checked location; tag push builds and publishes unsigned packages, with the unverified gates stated |
+| T23 | Release in progress | Version `0.2.0-beta.2` in every checked location; tag push builds and publishes unsigned packages, with the unverified gates stated |
 | T24–T26 | Implemented, partial native verification | Capability reporting, tray/single-instance/close handling; physical desktop scripts pending |
 | T27 | Implemented, Linux/X11 headless verified | Logical bounds in `window-placement.json` (app data), clamped to a monitor work area; losing the remembered monitor falls back to the primary monitor (unit tested). *Reset window position* restores 420×440 and asks to centre where a position request is honoured. Xvfb: a restart restored the saved 320×200 bounds. Reset itself and monitor hot-plug were not separately exercised in that run. i3/Regolith still tile unless a floating rule is added; Wayland placement is a hint only |
 | T28 | Implemented, automated tests only | Record/validate/reset local chords in Settings; stored as `localShortcuts`; invalid, duplicate or reserved chords never replace a working default; the help dialog shows the effective bindings. Recording on physical keyboard layouts, AltGr and IME is not manually verified |
